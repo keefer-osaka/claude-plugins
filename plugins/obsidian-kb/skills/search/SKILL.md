@@ -63,5 +63,4 @@ If still no results:
 
 - `PLUGIN_LANG` determines the response language: `en` → English, `zh-TW` → 繁體中文, `ja` → 日本語
 - The qmd collection must be built first via `/kb-ingest` → `qmd update --collection <collection>`
-- `qmd embed` is disabled on this machine (Metal GPU bug) — vector search may miss new pages; BM25 (lex) is reliable
 - Cross-directory: this skill works from any working directory

@@ -2,8 +2,9 @@
 # load.sh - Load shell locale strings based on PLUGIN_LANG in .env
 # Usage: source "$(dirname "$0")/i18n/load.sh"
 
-_I18N_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_PLUGIN_NAME="$(basename "$(cd "$_I18N_DIR/../.." && pwd)")"
+_I18N_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+_PLUGIN_NAME="${_I18N_DIR%/*/*}"
+_PLUGIN_NAME="${_PLUGIN_NAME##*/}"
 _DATA_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/devtools-plugins/$_PLUGIN_NAME"
 
 _PLUGIN_LANG="en"
@@ -41,4 +42,25 @@ normalize_skip_args() {
   for _a in "$@"; do
     case "$_a" in skip|-) _NORMALIZED_ARGS+=("") ;; *) _NORMALIZED_ARGS+=("$_a") ;; esac
   done
+}
+
+# Helper: interpolate %KEY% placeholders in a message string
+# Usage: fmt "$MSG_TEMPLATE" KEY1 val1 KEY2 val2 ...
+# Note: cannot use ${var//%KEY%/val} — bash treats leading % as end-anchor.
+fmt() {
+  local _t="$1" _k _v _prefix _suffix; shift
+  while [ $# -ge 2 ]; do
+    _k="$1" _v="$2"; shift 2
+    while true; do
+      case "$_t" in
+        *"%${_k}%"*)
+          _prefix="${_t%%"%${_k}%"*}"
+          _suffix="${_t#*"%${_k}%"}"
+          _t="${_prefix}${_v}${_suffix}"
+          ;;
+        *) break ;;
+      esac
+    done
+  done
+  printf '%s\n' "$_t"
 }

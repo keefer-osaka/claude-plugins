@@ -10,7 +10,7 @@
 set -euo pipefail
 
 VAULT_DIR="${1:-$HOME/claude-code/Obsidian}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "${0%/*}" && pwd)"
 PAYLOAD_SKILLS="$SCRIPT_DIR/vault-payload/.claude/skills"
 PAYLOAD_TEMPLATES="$SCRIPT_DIR/vault-payload/_schema/templates"
 
@@ -29,37 +29,28 @@ done
 
 # Create destination directories
 mkdir -p \
-  "$PAYLOAD_SKILLS/kb-ingest/scripts" \
-  "$PAYLOAD_SKILLS/kb-lint/scripts" \
-  "$PAYLOAD_SKILLS/kb-stats/scripts" \
+  "$PAYLOAD_SKILLS/kb-ingest" \
+  "$PAYLOAD_SKILLS/kb-lint" \
+  "$PAYLOAD_SKILLS/kb-stats" \
   "$PAYLOAD_TEMPLATES"
 
-# ── kb-ingest ──────────────────────────────────────────────────────────────
-echo "→ Syncing kb-ingest..."
-rsync -a --delete \
-  "$VAULT_DIR/.claude/skills/kb-ingest/scripts/" \
-  "$PAYLOAD_SKILLS/kb-ingest/scripts/"
-
-cp "$VAULT_DIR/.claude/skills/kb-ingest/SKILL.md" \
-   "$PAYLOAD_SKILLS/kb-ingest/SKILL.md"
-
-# ── kb-lint ────────────────────────────────────────────────────────────────
-echo "→ Syncing kb-lint..."
-rsync -a --delete \
-  "$VAULT_DIR/.claude/skills/kb-lint/scripts/" \
-  "$PAYLOAD_SKILLS/kb-lint/scripts/"
-
-cp "$VAULT_DIR/.claude/skills/kb-lint/SKILL.md" \
-   "$PAYLOAD_SKILLS/kb-lint/SKILL.md"
-
-# ── kb-stats ───────────────────────────────────────────────────────────────
-echo "→ Syncing kb-stats..."
-rsync -a --delete \
-  "$VAULT_DIR/.claude/skills/kb-stats/scripts/" \
-  "$PAYLOAD_SKILLS/kb-stats/scripts/"
-
-cp "$VAULT_DIR/.claude/skills/kb-stats/SKILL.md" \
-   "$PAYLOAD_SKILLS/kb-stats/SKILL.md"
+# Sync kb-ingest, kb-lint, kb-stats in parallel (SKILL.md + scripts/ per skill)
+_pids=()
+for _skill in kb-ingest kb-lint kb-stats; do
+  (
+    echo "→ Syncing ${_skill}..."
+    rsync -a --delete \
+      --include='SKILL.md' --include='scripts/' --include='scripts/**' --exclude='*' \
+      "$VAULT_DIR/.claude/skills/${_skill}/" \
+      "$PAYLOAD_SKILLS/${_skill}/"
+  ) &
+  _pids+=($!)
+  if [ "${#_pids[@]}" -ge 8 ]; then
+    wait "${_pids[0]}" 2>/dev/null || true
+    _pids=("${_pids[@]:1}")
+  fi
+done
+wait "${_pids[@]}" 2>/dev/null || true
 
 # ── Templates ──────────────────────────────────────────────────────────────
 echo "→ Syncing templates..."

@@ -57,13 +57,20 @@ Read `"${CLAUDE_PLUGIN_ROOT}/skills/setup/questions/<SETUP_LANG>.json"` → stor
 
 If `"Language"` / `"語言"` / `"言語"` is in `SELECTED`: ask `Q["language"]` as a separate AskUserQuestion. Map answer → `SETUP_LANG`. Reload Q with the new language.
 
+Normalize `SELECTED` → `SELECTED_TOKENS` (use in Steps 5–8):
+
+| Label in SELECTED | Token |
+|-------------------|-------|
+| `"Vault Directory"`, `"Vault 路徑"`, `"Vault ディレクトリ"` | `vault` |
+| `"Qmd Binary"`, `"qmd Binary"` | `qmd_bin` |
+| `"Qmd Collection"`, `"qmd Collection"` | `qmd_collection` |
+| `"Language"`, `"語言"`, `"言語"` | `lang` |
+
 ---
 
 ## Step 5 — Detect defaults
 
-**Skip** if neither `"Vault Directory"` / `"Vault 目錄"` / `"Vault ディレクトリ"` nor `"Search Configuration"` / `"搜尋設定"` / `"検索設定"` is in `SELECTED`. Set `DETECTED_VAULT=""`, `DETECTED_QMD=""`.
-
-Otherwise:
+**Reconfigure**: skip to Step 6 if neither `vault` nor `qmd_bin` is in `SELECTED_TOKENS`. Set `DETECTED_VAULT=""`, `DETECTED_QMD=""`.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-defaults.sh"
@@ -78,7 +85,7 @@ Parse output silently: `DETECTED_VAULT`, `DETECTED_QMD`.
 Take `Q["all_settings"]`. Substitute `<DETECTED_VAULT>` and `<DETECTED_QMD>` in all option labels and descriptions.
 
 - **First-time**: ask AskUserQuestion with all three sub-questions.
-- **Reconfigure**: ask AskUserQuestion with only the sub-questions whose `header` is in `SELECTED`, excluding Language (already handled in Step 4). Omit others; pass `skip` for their values in Step 8. If no sub-questions remain, skip this step.
+- **Reconfigure**: ask AskUserQuestion with only the sub-questions whose `header` is in `SELECTED`, excluding `lang` (already handled in Step 4). Omit others; pass `skip` for their values in Step 8. If no sub-questions remain, skip this step.
 
 From the answers, set `VAULT_PATH` (vault dir answer or text field), `QMD_BIN_VAL`, `QMD_COLLECTION_VAL`.
 
@@ -86,7 +93,7 @@ From the answers, set `VAULT_PATH` (vault dir answer or text field), `QMD_BIN_VA
 
 ## Step 7 — Validate vault (if Vault Directory was answered)
 
-**Skip** if Vault Directory was not in `SELECTED` (reconfigure only). Set `NEED_INIT=0` and `VAULT_STATUS=existing`.
+**Skip** if `vault` is not in `SELECTED_TOKENS` (reconfigure only). Set `NEED_INIT=0` and `VAULT_STATUS=existing`.
 
 Otherwise:
 
@@ -109,7 +116,7 @@ Parse output silently: `VAULT_STATUS`, `NEED_INIT`.
 ## Step 8 — Save and install
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/save-config.sh" "<VAULT_PATH or skip>" "<SETUP_LANG if first-time or Language was in SELECTED, else skip>" "<QMD_BIN_VAL or skip>" "<QMD_COLLECTION_VAL or skip>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/save-config.sh" "<VAULT_PATH or skip>" "<SETUP_LANG if first-time or lang in SELECTED_TOKENS, else skip>" "<QMD_BIN_VAL or skip>" "<QMD_COLLECTION_VAL or skip>"
 ```
 
 If `NEED_INIT=1`: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/init-vault.sh" "$VAULT_PATH"`

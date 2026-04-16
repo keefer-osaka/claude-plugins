@@ -36,7 +36,6 @@ for skill in kb-ingest kb-lint kb-stats kb-wiki; do
 done
 
 OLD_VERSION=""
-DO_UPGRADE=0
 
 if [ "$HAS_EXISTING" -eq 1 ]; then
   EXISTING_VERSION=""
@@ -53,15 +52,10 @@ if [ "$HAS_EXISTING" -eq 1 ]; then
 
   mkdir -p "$BACKUP_DIR"
   for skill in kb-ingest kb-lint kb-stats kb-wiki; do
-    if [ -d "$SKILLS_DIR/$skill" ]; then
-      mv "$SKILLS_DIR/$skill" "$BACKUP_DIR/"
-    fi
+    mv "$SKILLS_DIR/$skill" "$BACKUP_DIR/" 2>/dev/null || true
   done
-  for f in _version _installed-by; do
-    if [ -f "$SKILLS_DIR/$f" ]; then mv "$SKILLS_DIR/$f" "$BACKUP_DIR/"; fi
-  done
-
-  DO_UPGRADE=1
+  mv "$SKILLS_DIR/_version" "$BACKUP_DIR/" 2>/dev/null || true
+  mv "$SKILLS_DIR/_installed-by" "$BACKUP_DIR/" 2>/dev/null || true
 fi
 
 mkdir -p "$SKILLS_DIR"
@@ -74,7 +68,7 @@ find "$SKILLS_DIR" -name "SKILL.md" -exec sed -i '' "s|__VAULT_DIR__|$VAULT_DIR|
 
 printf '%s' "$PLUGIN_VERSION" > "$VERSION_FILE"
 printf 'obsidian-kb plugin %s installed at %s\n' "$PLUGIN_VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$SKILLS_DIR/_installed-by"
-if [ "$DO_UPGRADE" -eq 1 ] || [ "$FORCE" = "--force" ]; then
+if [ "$HAS_EXISTING" -eq 1 ]; then
   fmt "$MSG_SKILLS_UPGRADED" OLD_VERSION "$OLD_VERSION" NEW_VERSION "$PLUGIN_VERSION" BACKUP_DIR "$BACKUP_DIR"
 else
   fmt "$MSG_SKILLS_INSTALLED" VERSION "$PLUGIN_VERSION" VAULT_DIR "$VAULT_DIR"
