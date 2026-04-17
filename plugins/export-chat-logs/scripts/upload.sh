@@ -130,7 +130,7 @@ fi
 
 # Exit early if no sessions found
 if [ "$CC_COUNT" -eq 0 ] && [ "$CW_COUNT" -eq 0 ]; then
-  echo "${WARN_NO_SESSIONS//%DAYS%/$DAYS}"
+  fmt "$WARN_NO_SESSIONS" DAYS "$DAYS"
   rm -rf "$TMPDIR_PATH"
   exit 0
 fi
@@ -186,15 +186,14 @@ if [ -n "$GIT_USER_EMAIL" ]; then
 else
   GIT_USER="$GIT_USER_DISPLAY"
 fi
-_s1="${SUMMARY_USER//%GIT_USER%/$GIT_USER}"
-_s2="${SUMMARY_PERIOD//%START_DATE%/$START_DATE}"; _s2="${_s2//%TODAY%/$TODAY}"; _s2="${_s2//%DAYS%/$DAYS}"
+_s1=$(fmt "$SUMMARY_USER" GIT_USER "$GIT_USER")
+_s2=$(fmt "$SUMMARY_PERIOD" START_DATE "$START_DATE" TODAY "$TODAY" DAYS "$DAYS")
 if [ "$INCLUDE_COWORK" = "true" ] && [ "$CW_COUNT" -gt 0 ]; then
-  _s3="${SUMMARY_STATS_COWORK//%CC_SESSIONS%/$CC_SESSIONS}"
-  _s3="${_s3//%CW_SESSIONS%/$CW_COUNT}"
+  _s3=$(fmt "$SUMMARY_STATS_COWORK" CC_SESSIONS "$CC_SESSIONS" CW_SESSIONS "$CW_COUNT")
 else
-  _s3="${SUMMARY_STATS//%CC_SESSIONS%/$CC_SESSIONS}"
+  _s3=$(fmt "$SUMMARY_STATS" CC_SESSIONS "$CC_SESSIONS")
 fi
-_s4="${SUMMARY_SIZE//%ZIP_SIZE%/$ZIP_SIZE}"
+_s4=$(fmt "$SUMMARY_SIZE" ZIP_SIZE "$ZIP_SIZE")
 if [ "$OUTPUT_FORMAT" = "html" ]; then
   _s5="$SUMMARY_FORMAT_HTML"
 else
@@ -206,6 +205,8 @@ $_s2
 $_s3
 $_s4
 $_s5"
+
+SUMMARY_TEXT="${SUMMARY_TEXT:0:4000}"
 
 # Send text summary first
 curl -s -o /dev/null -X POST \
@@ -237,11 +238,7 @@ fi
 # Clean up temp directory
 rm -rf "$TMPDIR_PATH"
 if [ "$INCLUDE_COWORK" = "true" ] && [ "$CW_COUNT" -gt 0 ]; then
-  _done="${MSG_DONE_COWORK//%CC_SESSIONS%/$CC_SESSIONS}"
-  _done="${_done//%CW_SESSIONS%/$CW_COUNT}"
-  _done="${_done//%ZIP_SIZE%/$ZIP_SIZE}"
+  fmt "$MSG_DONE_COWORK" CC_SESSIONS "$CC_SESSIONS" CW_SESSIONS "$CW_COUNT" ZIP_SIZE "$ZIP_SIZE"
 else
-  _done="${MSG_DONE//%CC_SESSIONS%/$CC_SESSIONS}"
-  _done="${_done//%ZIP_SIZE%/$ZIP_SIZE}"
+  fmt "$MSG_DONE" CC_SESSIONS "$CC_SESSIONS" ZIP_SIZE "$ZIP_SIZE"
 fi
-echo "$_done"

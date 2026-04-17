@@ -23,8 +23,8 @@ SUMMARY_STATS_COWORK="📊 Stats: %CC_SESSIONS% sessions (Claude Code) + %CW_SES
 MSG_DONE_COWORK="✅ Done! Claude Code: %CC_SESSIONS% sessions, Claude Cowork: %CW_SESSIONS% sessions, zip: %ZIP_SIZE%, sent to Telegram"
 
 # save-config.sh
-ERR_TOKEN_REQUIRED="❌ Token required: bash save-config.sh <token> <chat_id> [timezone] [lang] [format]"
-ERR_CHATID_REQUIRED="❌ Chat ID required: bash save-config.sh <token> <chat_id> [timezone] [lang] [format]"
+ERR_TOKEN_REQUIRED="❌ Token required: bash save-config.sh <token> <chat_id> [timezone] [lang] [format] [cowork]"
+ERR_CHATID_REQUIRED="❌ Chat ID required: bash save-config.sh <token> <chat_id> [timezone] [lang] [format] [cowork]"
 MSG_CONFIG_SAVED="✅ Configuration saved (Token + Chat ID + Timezone %TZ_LABEL% + Language %LANG% + Format %FORMAT% + Cowork %COWORK%)"
 
 # install-launchd.sh - weekday names (launchd: 0/7=Sunday, 1=Monday, ..., 6=Saturday)

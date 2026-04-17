@@ -202,7 +202,8 @@ def scan_wiki_sources(wiki_dir: str) -> dict:
         rel_path = os.path.relpath(str(path), vault_root)
         try:
             content = path.read_text(encoding="utf-8")
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] scan_wiki_sources read {path}: {e}", file=sys.stderr)
             continue
         fm = _parse_frontmatter_sources(content)
         for session_id in fm:
@@ -214,14 +215,8 @@ def scan_wiki_sources(wiki_dir: str) -> dict:
 
 def _parse_frontmatter_sources(content: str) -> list:
     """從 markdown frontmatter 提取所有 session ID。"""
-    fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-    if not fm_match:
-        return []
-    fm_text = fm_match.group(1)
-    session_ids = []
-    for m in re.finditer(r'^\s+(?:-\s+)?session:\s*(\S+)', fm_text, re.MULTILINE):
-        session_ids.append(m.group(1).strip())
-    return session_ids
+    from wiki_utils import extract_fm_text, parse_source_blocks
+    return [b["session"] for b in parse_source_blocks(extract_fm_text(content))]
 
 
 def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) -> bool:
@@ -233,7 +228,8 @@ def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) 
     """
     try:
         content = Path(wiki_path).read_text(encoding="utf-8")
-    except Exception:
+    except Exception as e:
+        print(f"[WARN] add_transcript_to_wiki_sources read {wiki_path}: {e}", file=sys.stderr)
         return False
 
     fm_match = re.match(r'^(---\s*\n)(.*?)(\n---\s*\n)(.*)', content, re.DOTALL)
@@ -336,7 +332,8 @@ def append_delta_to_transcript(transcript_path: str, new_messages: list, new_las
     """
     try:
         content = Path(transcript_path).read_text(encoding="utf-8")
-    except Exception:
+    except Exception as e:
+        print(f"[WARN] append_delta_to_transcript read {transcript_path}: {e}", file=sys.stderr)
         return False
 
     # 找 delta marker
@@ -412,7 +409,8 @@ def rebuild_transcripts_index(transcripts_dir: str) -> None:
             session = session_m.group(1).strip()[:8] if session_m else "?"
             status = status_m.group(1).strip() if status_m else "?"
             entries.append((date, title, session, status, p.name))
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] rebuild_transcripts_index parse {p.name}: {e}", file=sys.stderr)
             continue
 
     entries.sort(key=lambda x: x[0], reverse=True)
@@ -470,6 +468,6 @@ def get_last_message_uuid(filepath: str) -> str:
                             last_uuid = uuid
                 except json.JSONDecodeError:
                     continue
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[WARN] get_last_message_uuid {filepath}: {e}", file=sys.stderr)
     return last_uuid

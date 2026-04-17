@@ -51,9 +51,13 @@ if [ "$HAS_EXISTING" -eq 1 ]; then
   fi
 
   mkdir -p "$BACKUP_DIR"
-  for skill in kb-ingest kb-lint kb-stats kb-wiki _lib; do
+  for skill in kb-ingest kb-lint kb-stats _lib; do
     mv "$SKILLS_DIR/$skill" "$BACKUP_DIR/" 2>/dev/null || true
   done
+  if [ -d "$SKILLS_DIR/kb-wiki" ]; then
+    mv "$SKILLS_DIR/kb-wiki" "$BACKUP_DIR/"
+    fmt "$MSG_KB_WIKI_RETIRED"
+  fi
   mv "$SKILLS_DIR/_version" "$BACKUP_DIR/" 2>/dev/null || true
   mv "$SKILLS_DIR/_installed-by" "$BACKUP_DIR/" 2>/dev/null || true
 fi

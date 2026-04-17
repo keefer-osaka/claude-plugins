@@ -12,11 +12,7 @@ source "$(dirname "$0")/i18n/load.sh"
 
 mkdir -p "$DATA_DIR"
 
-# Normalize "skip" / "-" to empty string
-[ "$1" = "skip" ] || [ "$1" = "-" ] && set -- "" "${@:2}"
-[ "$2" = "skip" ] || [ "$2" = "-" ] && set -- "$1" "" "${@:3}"
-[ "$3" = "skip" ] || [ "$3" = "-" ] && set -- "$1" "$2" "" "$4"
-[ "$4" = "skip" ] || [ "$4" = "-" ] && set -- "$1" "$2" "$3" ""
+normalize_skip_args "$@"; set -- "${_NORMALIZED_ARGS[@]}"
 
 PROTOC_PATH=$(resolve_arg "$1" PROTOC_PATH "")
 PROJECT_ROOT=$(resolve_arg "$2" PROJECT_ROOT "")
@@ -27,8 +23,4 @@ printf 'PROTOC_PATH=%s\nPROJECT_ROOT=%s\nPROTO_DIR=%s\nPLUGIN_LANG=%s\n' \
   "$PROTOC_PATH" "$PROJECT_ROOT" "$PROTO_DIR" "$PLUGIN_LANG" > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
-_msg="${MSG_CONFIG_SAVED//%PROTOC_PATH%/$PROTOC_PATH}"
-_msg="${_msg//%PROJECT_ROOT%/$PROJECT_ROOT}"
-_msg="${_msg//%PROTO_DIR%/$PROTO_DIR}"
-_msg="${_msg//%LANG%/$PLUGIN_LANG}"
-echo "$_msg"
+fmt "$MSG_CONFIG_SAVED" PROTOC_PATH "$PROTOC_PATH" PROJECT_ROOT "$PROJECT_ROOT" PROTO_DIR "$PROTO_DIR" LANG "$PLUGIN_LANG"

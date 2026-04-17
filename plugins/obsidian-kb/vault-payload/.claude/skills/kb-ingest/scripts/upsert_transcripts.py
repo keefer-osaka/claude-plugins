@@ -98,7 +98,7 @@ def main():
                     transcript_path=base_transcript_rel,
                     last_processed_msg_uuid=new_last_uuid,
                     last_processed_ts=now_ts,
-                    message_count=entry.get("message_count", 0) + len(session.get("messages", [])),
+                    message_count=entry.get("message_count", 0) + sum(1 for m in session.get("messages", []) if m.get("text", "").strip()),
                     status="processed",
                     derived_pages=new_derived_pages,
                 )

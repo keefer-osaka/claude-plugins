@@ -105,5 +105,36 @@ def format_tw_date(ts_str: str) -> str:
     try:
         dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(TW_TZ)
         return dt.strftime("%Y-%m-%d")
-    except Exception:
+    except Exception as e:
+        import sys
+        print(f"[WARN] format_tw_date({ts_str!r}): {e}", file=sys.stderr)
         return ts_str[:10] if ts_str and len(ts_str) >= 10 else ""
+
+
+# ── Source 解析工具 ────────────────────────────────────────────────────────────
+
+def extract_fm_text(text: str) -> str:
+    """回傳 frontmatter --- 之間的原文（不含分隔符），供逐行處理用。"""
+    if not text.startswith("---"):
+        return ""
+    end = text.find("\n---", 3)
+    if end == -1:
+        return ""
+    return text[3:end].strip()
+
+
+def parse_source_blocks(fm_text: str) -> list:
+    """從 frontmatter 原文提取 sources 條目，回傳 [{"session": str, "has_transcript": bool}]。"""
+    blocks = []
+    current = None
+    for line in fm_text.splitlines():
+        m = re.match(r'^\s+- session:\s*(\S+)', line)
+        if m:
+            if current:
+                blocks.append(current)
+            current = {"session": m.group(1), "has_transcript": False}
+        elif current and re.match(r'^\s+transcript:', line):
+            current["has_transcript"] = True
+    if current:
+        blocks.append(current)
+    return blocks

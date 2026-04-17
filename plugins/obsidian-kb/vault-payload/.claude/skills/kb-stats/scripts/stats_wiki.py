@@ -23,7 +23,7 @@ from pathlib import Path
 
 # ── _lib 共用模組 ─────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "_lib")))
-from wiki_utils import resolve_vault_dir, parse_frontmatter, TW_TZ  # noqa: E402
+from wiki_utils import resolve_vault_dir, parse_frontmatter, TW_TZ, parse_source_blocks, extract_fm_text  # noqa: E402
 
 # ── 路徑設定 ──────────────────────────────────────────────────────────────────
 VAULT_DIR = Path(resolve_vault_dir(__file__))
@@ -32,29 +32,12 @@ TRANSCRIPTS_DIR = VAULT_DIR / "transcripts"
 SESSIONS_JSON_PATH = VAULT_DIR / "_schema" / "sessions.json"
 REPORT_PATH = WIKI_DIR / "meta" / "stats-report.md"
 
-TODAY = date.today()
+TODAY = datetime.now(TW_TZ).date()
 
 # wiki/ 頂層非內容檔
 TOP_LEVEL_SKIP = {"hot.md", "index.md", "log.md", "overview.md"}
 # 子目錄內跳過
 SUBDIR_SKIP = {"_index.md"}
-
-
-def parse_sources_blocks(fm_text: str) -> list[dict]:
-    """從 frontmatter 原文提取 sources 條目（每個 - session: 開頭的塊）。"""
-    blocks = []
-    current = None
-    for line in fm_text.splitlines():
-        m = re.match(r'^\s+- session:\s*(\S+)', line)
-        if m:
-            if current:
-                blocks.append(current)
-            current = {"session": m.group(1), "has_transcript": False}
-        elif current and re.match(r'^\s+transcript:', line):
-            current["has_transcript"] = True
-    if current:
-        blocks.append(current)
-    return blocks
 
 
 # ── 收集 wiki 內容頁面 ────────────────────────────────────────────────────────
@@ -77,12 +60,12 @@ def collect_content_pages() -> list[dict]:
 
         try:
             text = md_path.read_text(encoding="utf-8")
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] stats_wiki read {md_path}: {e}", file=sys.stderr)
             continue
 
         fm, body = parse_frontmatter(text)
-        end = text.find("\n---", 3)
-        fm_text = text[3:end].strip() if text.startswith("---") and end != -1 else ""
+        fm_text = extract_fm_text(text)
 
         # 日期解析
         updated_str = fm.get("updated", fm.get("created", ""))
@@ -97,7 +80,7 @@ def collect_content_pages() -> list[dict]:
         has_tldrs = bool(re.search(r'^##\s+TL;DR', body, re.MULTILINE))
 
         # sources 解析
-        source_blocks = parse_sources_blocks(fm_text)
+        source_blocks = parse_source_blocks(fm_text)
 
         pages.append({
             "path": str(rel),
@@ -184,8 +167,8 @@ def load_transcripts_stats() -> dict:
         try:
             data = json.loads(SESSIONS_JSON_PATH.read_text(encoding="utf-8"))
             sessions_count = len(data)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[WARN] stats_wiki load sessions.json: {e}", file=sys.stderr)
     return {"transcripts": transcript_count, "sessions": sessions_count}
 
 

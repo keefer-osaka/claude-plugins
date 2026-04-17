@@ -24,7 +24,7 @@ except ValueError:
     print(f"錯誤：無效的 mtime 值：{sys.argv[1]}", file=sys.stderr)
     sys.exit(1)
 
-with open(ALL_WATERMARK_PATH, "w") as f:
+with open(ALL_WATERMARK_PATH, "w", encoding="utf-8") as f:
     f.write(str(max_mtime) + "\n")
 
 dt = datetime.fromtimestamp(max_mtime, tz=timezone.utc).isoformat()

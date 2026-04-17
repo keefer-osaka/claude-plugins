@@ -20,15 +20,14 @@ from datetime import date, datetime
 
 # ── _lib 共用模組 ─────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "_lib")))
-from wiki_utils import resolve_vault_dir, parse_frontmatter, WIKILINK_RE  # noqa: E402
+from wiki_utils import resolve_vault_dir, parse_frontmatter, WIKILINK_RE, TW_TZ  # noqa: E402
 
 # ── 路徑設定 ──────────────────────────────────────────────────────────────────
 VAULT_DIR = Path(resolve_vault_dir(__file__))
 WIKI_DIR = VAULT_DIR / "wiki"
 REPORT_PATH = WIKI_DIR / "meta" / "lint-report.md"
 
-TODAY = date.today()
-HOME = Path.home()
+TODAY = datetime.now(TW_TZ).date()
 
 
 # ── 頁面收集 ──────────────────────────────────────────────────────────────────
@@ -50,7 +49,7 @@ def find_all_index_entries():
     """從所有 _index.md 收集已列入的 wiki 連結"""
     entries = set()
     for idx in WIKI_DIR.rglob("_index.md"):
-        text = idx.read_text()
+        text = idx.read_text(encoding="utf-8")
         for m in WIKILINK_RE.findall(text):
             entries.add(m.lower().replace(" ", "-"))
         for m in re.findall(r'\[.*?\]\(([^)]+\.md)\)', text):
@@ -95,11 +94,11 @@ def check_canonical_drift(parsed_pages):
         missing_cfs = []
         cf_contents = {}
         for cf in canonical_files:
-            cf_path = Path(cf.replace("~", str(HOME)))
+            cf_path = Path(cf).expanduser()
             if not cf_path.exists():
                 missing_cfs.append(cf)
             else:
-                cf_contents[cf] = cf_path.read_text()
+                cf_contents[cf] = cf_path.read_text(encoding="utf-8")
 
         for cf in missing_cfs:
             issues.append({"page": page, "type": "file_missing",
@@ -111,7 +110,7 @@ def check_canonical_drift(parsed_pages):
         candidates = extract_code_values(body)
 
         # 過濾 canonical file 路徑本身
-        cf_paths_resolved = {Path(cf.replace("~", str(HOME))) for cf in canonical_files}
+        cf_paths_resolved = {Path(cf).expanduser() for cf in canonical_files}
         cf_basenames = {p.name for p in cf_paths_resolved}
         cf_paths_raw = set(canonical_files)
         candidates = {
@@ -163,10 +162,10 @@ def check_orphaned_pages(parsed_pages):
     for special in ["hot.md", "index.md"]:
         sp = WIKI_DIR / special
         if sp.exists():
-            for link in WIKILINK_RE.findall(sp.read_text()):
+            for link in WIKILINK_RE.findall(sp.read_text(encoding="utf-8")):
                 all_links.add(link.lower().replace(" ", "-"))
     for idx in WIKI_DIR.rglob("_index.md"):
-        for link in WIKILINK_RE.findall(idx.read_text()):
+        for link in WIKILINK_RE.findall(idx.read_text(encoding="utf-8")):
             all_links.add(link.lower().replace(" ", "-"))
     return [page for page, *_ in parsed_pages if page.stem.lower() not in all_links]
 
@@ -276,7 +275,7 @@ def main():
     # 一次讀取並解析所有頁面（避免重複 I/O）
     parsed_pages = []
     for p in pages:
-        text = p.read_text()
+        text = p.read_text(encoding="utf-8")
         fm, body = parse_frontmatter(text)
         parsed_pages.append((p, text, fm, body))
 
@@ -293,7 +292,7 @@ def main():
     report = generate_report(results)
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(report)
+    REPORT_PATH.write_text(report, encoding="utf-8")
 
     print(report)
 

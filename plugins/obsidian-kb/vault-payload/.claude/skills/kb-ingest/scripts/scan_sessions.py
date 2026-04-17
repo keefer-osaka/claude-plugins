@@ -17,25 +17,11 @@ from datetime import datetime, timezone
 # ── 共用模組（transcript_utils → _lib/wiki_utils）────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
-try:
-    from transcript_utils import (
-        read_sessions_json, find_jsonl_files,
-        PROJECTS_DIR, EXCLUDE_DIRS, EXCLUDE_FILES,
-    )
-    from wiki_utils import resolve_vault_dir, format_tw_date
-except ImportError:
-    def read_sessions_json():
-        return {}
-    def find_jsonl_files():
-        import glob
-        return glob.glob(os.path.join(os.path.expanduser("~/.claude/projects"), "**", "*.jsonl"), recursive=True)
-    def format_tw_date(ts_str):
-        return ts_str[:10] if ts_str else ""
-    def resolve_vault_dir(f):
-        return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(f))))))
-    PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
-    EXCLUDE_DIRS = {"subagents", "memory"}
-    EXCLUDE_FILES = {"audit.jsonl"}
+from transcript_utils import (
+    read_sessions_json, find_jsonl_files,
+    PROJECTS_DIR, EXCLUDE_DIRS, EXCLUDE_FILES,
+)
+from wiki_utils import resolve_vault_dir, format_tw_date
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 
@@ -46,7 +32,7 @@ ALL_WATERMARK_PATH = os.path.join(VAULT_DIR, "_schema", ".all_watermark")
 MAX_MSG_LEN = 3000
 DEFAULT_LIMIT = 10
 
-# ── 解析工具（借鑑 devtools-plugins/common.py）────────────────────────────────
+# ── 解析工具 ──────────────────────────────────────────────────────────────────
 
 def parse_ts(ts_str):
     return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
@@ -433,7 +419,7 @@ def main():
 
     # --all 模式：掃完就自動推進游標，不依賴 skill 手動呼叫 update_all_watermark.py
     if all_mode and max_mtime > 0:
-        with open(ALL_WATERMARK_PATH, "w") as f:
+        with open(ALL_WATERMARK_PATH, "w", encoding="utf-8") as f:
             f.write(str(max_mtime) + "\n")
         output["all_watermark_updated"] = max_mtime
 

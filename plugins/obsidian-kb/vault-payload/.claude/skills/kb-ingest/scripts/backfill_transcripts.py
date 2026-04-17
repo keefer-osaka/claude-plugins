@@ -16,11 +16,9 @@ backfill_transcripts.py — 一次性回填歷史 session transcripts。
   python3 backfill_transcripts.py --limit N    # 只處理前 N 個 session（測試用）
 """
 
-import glob
 import json
 import os
 import sys
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,7 +33,7 @@ from transcript_utils import (
     find_jsonl_files, get_last_message_uuid,
 )
 # transcript_utils 已將 _lib 加入 sys.path，可直接 import
-from wiki_utils import format_tw_date
+from wiki_utils import format_tw_date, extract_fm_text, parse_source_blocks
 
 # 引入 scan_sessions 的解析工具（避免重複程式碼）
 from scan_sessions import parse_session, compute_active_duration, is_skill_only_session
@@ -201,14 +199,10 @@ def main():
         else:
             # dry-run: 只讀取確認哪些需要更新
             content = wiki_path.read_text(encoding="utf-8")
-            fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-            if fm_match:
-                fm = fm_match.group(1)
-                for m in re.finditer(r'^\s+(?:-\s+)?session:\s*(\S+)', fm, re.MULTILINE):
-                    sid = m.group(1).strip()
-                    if sid in session_to_transcript_path:
-                        wiki_updated += 1
-                        break
+            for block in parse_source_blocks(extract_fm_text(content)):
+                if block["session"] in session_to_transcript_path:
+                    wiki_updated += 1
+                    break
     print(f"  {'會更新' if dry_run else '已更新'} {wiki_updated} 個 wiki 頁面")
     stats["wiki_updated"] = wiki_updated
 

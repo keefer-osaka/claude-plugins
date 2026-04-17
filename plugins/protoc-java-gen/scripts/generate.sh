@@ -2,6 +2,7 @@
 # generate.sh - Generate Java from a .proto file and copy to matching subprojects
 # Usage: bash generate.sh [file.proto]
 #   No argument: list available .proto files
+set -euo pipefail
 
 DATA_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/devtools-plugins/protoc-java-gen"
 ENV_FILE="$DATA_DIR/.env"
@@ -22,17 +23,17 @@ PROTO_DIR="$PROJECT_ROOT/$PROTO_DIR_REL"
 
 # --- Validate ---
 if [ ! -x "$PROTOC_PATH" ]; then
-  echo "${ERR_PROTOC_NOT_FOUND//%PROTOC_PATH%/$PROTOC_PATH}"
+  fmt "$ERR_PROTOC_NOT_FOUND" PROTOC_PATH "$PROTOC_PATH"
   exit 1
 fi
 
 if [ ! -d "$PROTO_DIR" ]; then
-  echo "${ERR_PROTO_DIR_NOT_FOUND//%PROTO_DIR%/$PROTO_DIR}"
+  fmt "$ERR_PROTO_DIR_NOT_FOUND" PROTO_DIR "$PROTO_DIR"
   exit 1
 fi
 
 # --- No argument: list available protos ---
-if [ -z "$1" ]; then
+if [ $# -eq 0 ] || [ -z "${1:-}" ]; then
   echo "$MSG_AVAILABLE_PROTOS"
   find "$PROTO_DIR" -maxdepth 1 -name '*.proto' | sort | while read -r f; do
     echo "  $(basename "$f")"
@@ -40,7 +41,7 @@ if [ -z "$1" ]; then
   exit 0
 fi
 
-PROTO_FILE="$1"
+PROTO_FILE="${1:-}"
 # Auto-append .proto extension if missing
 [[ "$PROTO_FILE" != *.proto ]] && PROTO_FILE="${PROTO_FILE}.proto"
 PROTO_PATH="$PROTO_DIR/$PROTO_FILE"
@@ -48,43 +49,52 @@ PROTO_PATH="$PROTO_DIR/$PROTO_FILE"
 if [ ! -f "$PROTO_PATH" ]; then
   PROTO_PATH="$PROTO_FILE"
   if [ ! -f "$PROTO_PATH" ]; then
-    echo "${ERR_PROTO_FILE_NOT_FOUND//%PROTO_FILE%/$PROTO_FILE}"
+    fmt "$ERR_PROTO_FILE_NOT_FOUND" PROTO_FILE "$PROTO_FILE"
     exit 1
   fi
 fi
 
 # --- Extract java_outer_classname ---
-JAVA_CLASS=$(grep -o 'java_outer_classname\s*=\s*"[^"]*"' "$PROTO_PATH" | grep -o '"[^"]*"' | tr -d '"')
+JAVA_CLASS=$(grep -v '^\s*//' "$PROTO_PATH" | grep -o 'java_outer_classname\s*=\s*"[^"]*"' | grep -o '"[^"]*"' | tr -d '"')
 if [ -z "$JAVA_CLASS" ]; then
-  echo "${ERR_NO_CLASSNAME//%PROTO_FILE%/$(basename "$PROTO_PATH")}"
+  fmt "$ERR_NO_CLASSNAME" PROTO_FILE "$(basename "$PROTO_PATH")"
   exit 1
 fi
 JAVA_FILE="${JAVA_CLASS}.java"
 
-_msg="${MSG_GENERATING//%PROTO_FILE%/$(basename "$PROTO_PATH")}"
-_msg="${_msg//%JAVA_FILE%/$JAVA_FILE}"
-echo "$_msg"
+fmt "$MSG_GENERATING" PROTO_FILE "$(basename "$PROTO_PATH")" JAVA_FILE "$JAVA_FILE"
 
 # --- Run protoc ---
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-(cd "$PROTO_DIR" && "$PROTOC_PATH" --java_out="$WORK_DIR" --proto_path=. "$(basename "$PROTO_PATH")")
-PROTOC_EXIT=$?
+PROTOC_EXIT=0
+(cd "$PROTO_DIR" && "$PROTOC_PATH" --java_out="$WORK_DIR" --proto_path=. "$(basename "$PROTO_PATH")") \
+  || PROTOC_EXIT=$?
 if [ $PROTOC_EXIT -ne 0 ]; then
-  echo "${ERR_PROTOC_FAILED//%EXIT_CODE%/$PROTOC_EXIT}"
+  fmt "$ERR_PROTOC_FAILED" EXIT_CODE "$PROTOC_EXIT" >&2
   exit 1
 fi
 
-# Generated file is under proto/ package directory
-GENERATED="$WORK_DIR/proto/$JAVA_FILE"
+# Locate generated file: parse java_package / package from proto to derive subdir
+JAVA_PKG=$(grep -v '^\s*//' "$PROTO_PATH" | grep -o 'option java_package\s*=\s*"[^"]*"' | grep -o '"[^"]*"' | tr -d '"' | head -1)
+if [ -z "$JAVA_PKG" ]; then
+  JAVA_PKG=$(grep -v '^\s*//' "$PROTO_PATH" | grep -o '^package\s\+[^;]*' | awk '{print $2}' | head -1)
+fi
+PKG_PATH="${JAVA_PKG//.//}"
+GENERATED="$WORK_DIR/$PKG_PATH/$JAVA_FILE"
 if [ ! -f "$GENERATED" ]; then
-  # Try without package subdir (fallback)
-  GENERATED=$(find "$WORK_DIR" -name "$JAVA_FILE" | head -1)
+  MATCH_COUNT=$(find "$WORK_DIR" -name "$JAVA_FILE" -print | wc -l | tr -d ' ')
+  if [ "$MATCH_COUNT" -eq 1 ]; then
+    GENERATED=$(find "$WORK_DIR" -name "$JAVA_FILE" -print -quit)
+  elif [ "$MATCH_COUNT" -gt 1 ]; then
+    fmt "$ERR_PROTOC_FAILED" EXIT_CODE "multiple $JAVA_FILE found in output" >&2
+    exit 1
+  fi
 fi
 
 if [ -z "$GENERATED" ] || [ ! -f "$GENERATED" ]; then
-  echo "${ERR_PROTOC_FAILED//%EXIT_CODE%/generated file not found}"
+  fmt "$ERR_PROTOC_FAILED" EXIT_CODE "generated file not found"
   exit 1
 fi
 
@@ -92,10 +102,10 @@ fi
 TARGETS=()
 while IFS= read -r line; do
   TARGETS+=("$line")
-done < <(find "$PROJECT_ROOT" -path "*/src/main/java/proto/$JAVA_FILE" 2>/dev/null)
+done < <(find "$PROJECT_ROOT" -path "*/src/main/java/$PKG_PATH/$JAVA_FILE" 2>/dev/null)
 
 if [ ${#TARGETS[@]} -eq 0 ]; then
-  echo "${ERR_NO_TARGETS//%JAVA_FILE%/$JAVA_FILE}"
+  fmt "$ERR_NO_TARGETS" JAVA_FILE "$JAVA_FILE"
   exit 1
 fi
 
@@ -104,10 +114,10 @@ UPDATED=0
 SUBPROJECTS=()
 for TARGET in "${TARGETS[@]}"; do
   if diff -q "$GENERATED" "$TARGET" > /dev/null 2>&1; then
-    echo "${MSG_SKIPPED//%TARGET%/$TARGET}"
+    fmt "$MSG_SKIPPED" TARGET "$TARGET"
   else
     cp "$GENERATED" "$TARGET"
-    echo "${MSG_UPDATED//%TARGET%/$TARGET}"
+    fmt "$MSG_UPDATED" TARGET "$TARGET"
     UPDATED=$((UPDATED + 1))
     SUBPROJECT=$(echo "$TARGET" | sed 's|/src/main/java/.*||')
     SUBPROJECTS+=("$SUBPROJECT")
@@ -118,10 +128,7 @@ TOTAL=${#TARGETS[@]}
 UNIQUE_SUBPROJECTS=$(printf '%s\n' "${SUBPROJECTS[@]}" | sort -u | wc -l | tr -d ' ')
 
 if [ "$UPDATED" -eq 0 ]; then
-  echo "${MSG_NO_CHANGES//%TOTAL%/$TOTAL}"
+  fmt "$MSG_NO_CHANGES" TOTAL "$TOTAL"
 else
-  _msg="${MSG_SUMMARY//%UPDATED%/$UPDATED}"
-  _msg="${_msg//%TOTAL%/$TOTAL}"
-  _msg="${_msg//%SUBPROJECTS%/$UNIQUE_SUBPROJECTS}"
-  echo "$_msg"
+  fmt "$MSG_SUMMARY" UPDATED "$UPDATED" TOTAL "$TOTAL" SUBPROJECTS "$UNIQUE_SUBPROJECTS"
 fi
