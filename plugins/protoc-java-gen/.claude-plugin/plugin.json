@@ -1,7 +1,7 @@
 {
   "name": "protoc-java-gen",
   "description": "Generate Java from .proto files using a specific protoc version and auto-copy to subprojects.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "keefer-osaka",
     "url": "https://github.com/keefer-osaka"
