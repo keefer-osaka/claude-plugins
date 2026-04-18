@@ -1,6 +1,6 @@
 {
   "name": "obsidian-kb",
-  "description": "Obsidian-based persistent knowledge base for Claude Code — installs ingest/lint/stats into your vault, provides cross-directory semantic search via qmd.",
+  "description": "Obsidian-based persistent knowledge base for Claude Code — installs ingest/lint/stats/import into your vault, supports multi-contributor wiki with author attribution.",
   "version": "0.2.0",
   "author": {
     "name": "keefer-osaka",
@@ -8,5 +8,5 @@
   },
   "repository": "https://github.com/keefer-osaka/devtools-plugins",
   "license": "MIT",
-  "keywords": ["obsidian", "knowledge-base", "wiki", "qmd", "claude-code", "memory", "ingest"]
+  "keywords": ["obsidian", "knowledge-base", "wiki", "qmd", "claude-code", "memory", "ingest", "import", "multi-contributor"]
 }

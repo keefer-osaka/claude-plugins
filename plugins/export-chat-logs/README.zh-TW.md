@@ -100,6 +100,20 @@ claude -p "/export-chat-logs:upload 14" --allowedTools "Bash,Read"
 
 ---
 
+## 相關：匯入 obsidian-kb
+
+本 plugin 匯出的對話記錄 zip 可直接供 [obsidian-kb](https://github.com/keefer-osaka/devtools-plugins/tree/main/plugins/obsidian-kb) plugin 的 `/kb-import` skill 使用，以填充共享知識庫 wiki。
+
+```
+/kb-import chat-logs-alice-20250417.zip
+```
+
+zip 檔名慣例（`chat-logs-<author>-YYYYMMDD.zip`）會以作者歸因形式保存在 vault 中，UUID 增量追蹤可防止重複匯入。
+
+> **提示：** `.html` 與 `.md` 兩種輸出格式均支援，無需修改 `.env` 中的 `OUTPUT_FORMAT`。
+
+---
+
 ## 相關：內建 `/insights` 指令
 
 Claude Code 內建 `/insights` 指令（不需安裝任何 plugin），可對過去 30 天的使用模式產生 AI 質性分析報告。

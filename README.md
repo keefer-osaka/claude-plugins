@@ -8,7 +8,7 @@ A collection of [Claude Code](https://claude.ai/code) plugins for developer work
 
 | Plugin | Description |
 |--------|-------------|
-| [obsidian-kb](plugins/obsidian-kb/) | Bootstrap and maintain an Obsidian knowledge-base vault with kb-ingest / kb-lint / kb-stats skills and qmd-backed search |
+| [obsidian-kb](plugins/obsidian-kb/) | Bootstrap and maintain an Obsidian knowledge-base vault with kb-ingest / kb-lint / kb-stats / kb-import skills, multi-contributor support, and qmd-backed search |
 | [export-chat-logs](plugins/export-chat-logs/) | Export Claude Code and Cowork chat logs as HTML or Markdown, zip them, and send via Telegram |
 | [protoc-java-gen](plugins/protoc-java-gen/) | Generate Java from `.proto` files using a specific protoc version and auto-copy to subprojects |
 

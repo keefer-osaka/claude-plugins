@@ -100,6 +100,20 @@ The setup wizard asks for your preferred schedule and export range, then install
 
 ---
 
+## Related: Ingest into obsidian-kb
+
+Chat-log zips exported by this plugin can be fed directly into the [obsidian-kb](https://github.com/keefer-osaka/devtools-plugins/tree/main/plugins/obsidian-kb) plugin's `/kb-import` skill to populate a shared knowledge-base wiki.
+
+```
+/kb-import chat-logs-alice-20250417.zip
+```
+
+The zip filename convention (`chat-logs-<author>-YYYYMMDD.zip`) is preserved as author attribution inside the vault, and UUID-based delta tracking prevents duplicate ingestion if the same zip is imported twice.
+
+> **Tip:** Both `.html` and `.md` output formats are accepted — no need to change `OUTPUT_FORMAT` in `.env`.
+
+---
+
 ## Related: Built-in `/insights` Command
 
 Claude Code has a built-in `/insights` command (no plugin required) that generates an AI-powered qualitative analysis report of your usage patterns over the past 30 days.

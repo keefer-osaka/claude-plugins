@@ -100,6 +100,20 @@ claude -p "/export-chat-logs:upload 14" --allowedTools "Bash,Read"
 
 ---
 
+## 関連：obsidian-kb へのインポート
+
+このプラグインでエクスポートしたチャットログ zip は、[obsidian-kb](https://github.com/keefer-osaka/devtools-plugins/tree/main/plugins/obsidian-kb) プラグインの `/kb-import` スキルに直接渡して、共有ナレッジベース wiki を構築できます。
+
+```
+/kb-import chat-logs-alice-20250417.zip
+```
+
+zip ファイル名の慣例（`chat-logs-<author>-YYYYMMDD.zip`）は vault 内の著者帰属として保持され、UUID デルタ追跡で重複インポートを防ぎます。
+
+> **ヒント：** `.html` と `.md` の両出力フォーマットに対応しており、`.env` の `OUTPUT_FORMAT` を変更する必要はありません。
+
+---
+
 ## 関連：組み込み `/insights` コマンド
 
 Claude Code には組み込みの `/insights` コマンド（プラグイン不要）があり、過去 30 日間の使用パターンを AI が質的に分析したレポートを生成します。
