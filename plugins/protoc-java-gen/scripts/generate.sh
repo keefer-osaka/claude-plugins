@@ -58,7 +58,7 @@ extract_proto_option() {
   local key=$1
   grep -v '^\s*//' "$PROTO_PATH" \
     | grep -oE "option[[:space:]]+${key}[[:space:]]*=[[:space:]]*\"[^\"]*\"" \
-    | grep -o '"[^"]*"' | tr -d '"' | head -1
+    | grep -o '"[^"]*"' | tr -d '"' | head -1 || true
 }
 
 # --- Extract java_outer_classname ---
@@ -86,7 +86,7 @@ fi
 # Locate generated file: parse java_package / package from proto to derive subdir
 JAVA_PKG=$(extract_proto_option "java_package")
 if [ -z "$JAVA_PKG" ]; then
-  JAVA_PKG=$(grep -v '^\s*//' "$PROTO_PATH" | grep -o '^package\s\+[^;]*' | awk '{print $2}' | head -1)
+  JAVA_PKG=$(grep -v '^\s*//' "$PROTO_PATH" | grep -m1 '^package ' | awk '{print $2}' | tr -d ';' || true)
 fi
 PKG_PATH="${JAVA_PKG//.//}"
 GENERATED="$WORK_DIR/$PKG_PATH/$JAVA_FILE"
@@ -132,10 +132,10 @@ for TARGET in "${TARGETS[@]}"; do
 done
 
 TOTAL=${#TARGETS[@]}
-UNIQUE_SUBPROJECTS=$(printf '%s\n' "${SUBPROJECTS[@]}" | sort -u | wc -l | tr -d ' ')
 
 if [ "$UPDATED" -eq 0 ]; then
   fmt "$MSG_NO_CHANGES" TOTAL "$TOTAL"
 else
+  UNIQUE_SUBPROJECTS=$(printf '%s\n' "${SUBPROJECTS[@]}" | sort -u | wc -l | tr -d ' ')
   fmt "$MSG_SUMMARY" UPDATED "$UPDATED" TOTAL "$TOTAL" SUBPROJECTS "$UNIQUE_SUBPROJECTS"
 fi
