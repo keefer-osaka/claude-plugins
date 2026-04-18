@@ -129,6 +129,12 @@ def compute_stats(pages: list[dict]) -> dict:
         sum(1 for sb in p["source_blocks"] if sb["has_transcript"])
         for p in pages
     )
+    unlinked_sources = [
+        (p["path"], sb["session"])
+        for p in pages
+        for sb in p["source_blocks"]
+        if not sb["has_transcript"]
+    ]
 
     # 新鮮度
     updated_pages = [p for p in pages if p["updated"]]
@@ -150,6 +156,7 @@ def compute_stats(pages: list[dict]) -> dict:
         "total_source_refs": total_source_refs,
         "avg_sources": avg_sources,
         "transcript_linked": transcript_linked,
+        "unlinked_sources": unlinked_sources,
         "fresh_30": fresh_30,
         "fresh_60": fresh_60,
         "fresh_90": fresh_90,
@@ -159,15 +166,33 @@ def compute_stats(pages: list[dict]) -> dict:
 
 
 def load_transcripts_stats() -> dict:
-    transcript_count = len([p for p in TRANSCRIPTS_DIR.glob("*.md") if p.name != "_index.md"]) if TRANSCRIPTS_DIR.exists() else 0
+    disk_files = set()
+    if TRANSCRIPTS_DIR.exists():
+        disk_files = {p.name for p in TRANSCRIPTS_DIR.glob("*.md") if p.name != "_index.md"}
+    transcript_count = len(disk_files)
+
     sessions_count = 0
+    manifest_paths = set()
     if SESSIONS_JSON_PATH.exists():
         try:
             data = json.loads(SESSIONS_JSON_PATH.read_text(encoding="utf-8"))
             sessions_count = len(data)
+            manifest_paths = {
+                os.path.basename(v["transcript_path"])
+                for v in data.values()
+                if v.get("transcript_path")
+            }
         except Exception as e:
             print(f"[WARN] stats_wiki load sessions.json: {e}", file=sys.stderr)
-    return {"transcripts": transcript_count, "sessions": sessions_count}
+
+    orphan_files = sorted(disk_files - manifest_paths)
+    missing_files = sorted(manifest_paths - disk_files)
+    return {
+        "transcripts": transcript_count,
+        "sessions": sessions_count,
+        "orphan_files": orphan_files,
+        "missing_files": missing_files,
+    }
 
 
 # ── 報告渲染 ──────────────────────────────────────────────────────────────────
@@ -260,6 +285,9 @@ def render_report(stats: dict, ts_stats: dict) -> str:
         f"- Sources 條目有 transcript: 欄位：**{tl} / {tb}**（{pct(tl, tb)}）",
         f"- 尚未連結：{tb - tl} 個",
     ]
+    if tb - tl > 0:
+        for page_path, sid in stats.get("unlinked_sources", []):
+            lines.append(f"  - `{page_path}` ← session `{sid}`")
 
     lines += [
         "",
@@ -291,6 +319,10 @@ def render_report(stats: dict, ts_stats: dict) -> str:
             lines.append("- 兩者一致")
         else:
             lines.append(f"- 差異：{abs(diff)} 個（{'sessions.json 多' if diff > 0 else 'transcripts 多'}）")
+    for fname in ts_stats.get("orphan_files", []):
+        lines.append(f"  - orphan: `transcripts/{fname}`（sessions.json 無對應）")
+    for fname in ts_stats.get("missing_files", []):
+        lines.append(f"  - missing: `transcripts/{fname}`（檔案不存在）")
 
     lines += ["", "---", "", f"_由 `/kb-stats` 自動生成於 {now_tw}_", ""]
     return "\n".join(lines)

@@ -28,7 +28,8 @@ from transcript_utils import (
     VAULT_DIR, TRANSCRIPTS_DIR, WIKI_DIR, TW_TZ,
     make_transcript_filename, render_transcript_md,
     read_sessions_json, write_sessions_json, upsert_session_manifest,
-    scan_wiki_sources, add_transcript_to_wiki_sources, rebuild_transcripts_index,
+    scan_wiki_sources, add_transcript_to_wiki_sources, backfill_wiki_transcripts,
+    rebuild_transcripts_index,
     find_jsonl_files, get_last_message_uuid,
 )
 # transcript_utils 已將 _lib 加入 sys.path，可直接 import
@@ -187,16 +188,14 @@ def main():
 
     # 6. 更新 wiki 頁面的 sources frontmatter（補 transcript:）
     print(f"\n{'[DRY RUN] ' if dry_run else ''}更新 wiki 頁面 sources frontmatter...")
-    wiki_updated = 0
-    for wiki_path in Path(WIKI_DIR).rglob("*.md"):
-        if wiki_path.name == "_index.md":
-            continue
-        if not dry_run:
-            updated = add_transcript_to_wiki_sources(str(wiki_path), session_to_transcript_path)
-            if updated:
-                wiki_updated += 1
-        else:
-            # dry-run: 只讀取確認哪些需要更新
+    if not dry_run:
+        wiki_updated = backfill_wiki_transcripts(manifest, WIKI_DIR)
+    else:
+        # dry-run: 只讀取確認哪些需要更新
+        wiki_updated = 0
+        for wiki_path in Path(WIKI_DIR).rglob("*.md"):
+            if wiki_path.name == "_index.md":
+                continue
             content = wiki_path.read_text(encoding="utf-8")
             for block in parse_source_blocks(extract_fm_text(content)):
                 if block["session"] in session_to_transcript_path:

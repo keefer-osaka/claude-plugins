@@ -41,11 +41,11 @@ from pathlib import Path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from transcript_utils import (
-    VAULT_DIR, TRANSCRIPTS_DIR,
+    VAULT_DIR, TRANSCRIPTS_DIR, WIKI_DIR,
     render_transcript_md, append_delta_to_transcript,
     read_sessions_json, write_sessions_json, upsert_session_manifest,
     rebuild_transcripts_index, make_transcript_filename,
-    get_last_message_uuid,
+    get_last_message_uuid, backfill_wiki_transcripts,
 )
 
 
@@ -110,6 +110,10 @@ def main():
                 updated += 1
             else:
                 # 新 session：建立 transcript
+                messages = session.get("messages", [])
+                if not messages:
+                    print(f"[skip] empty session {session_id[:8]}... (no messages)", file=sys.stderr)
+                    continue
                 fname = make_transcript_filename(
                     session.get("first_ts", ""),
                     session_id,
@@ -118,6 +122,12 @@ def main():
                 transcript_rel = os.path.join("transcripts", fname)
                 transcript_abs = os.path.join(TRANSCRIPTS_DIR, fname)
                 last_uuid = get_last_message_uuid(jsonl_path) if jsonl_path else ""
+                old_tp = manifest.get(session_id, {}).get("transcript_path", "")
+                if old_tp and old_tp != transcript_rel:
+                    old_abs = os.path.join(VAULT_DIR, old_tp)
+                    if os.path.exists(old_abs):
+                        os.remove(old_abs)
+                        print(f"[cleanup] removed stale transcript {old_tp}", file=sys.stderr)
 
                 md = render_transcript_md(
                     session_id=session_id,
@@ -126,13 +136,13 @@ def main():
                     date=session.get("date", ""),
                     first_ts=session.get("first_ts", ""),
                     last_ts=session.get("last_ts", ""),
-                    message_count=len(session.get("messages", [])),
+                    message_count=len(messages),
                     last_processed_msg_uuid=last_uuid,
                     last_processed_at=now_ts,
                     models=session.get("models", []),
                     derived_pages=new_derived_pages,
                     status="processed",
-                    messages=session.get("messages", []),
+                    messages=messages,
                     author=session.get("author", ""),
                     source=session.get("source", "jsonl"),
                 )
@@ -142,7 +152,7 @@ def main():
                     transcript_path=transcript_rel,
                     last_processed_msg_uuid=last_uuid,
                     last_processed_ts=now_ts,
-                    message_count=len(session.get("messages", [])),
+                    message_count=len(messages),
                     status="processed",
                     derived_pages=new_derived_pages,
                     author=session.get("author", ""),
@@ -154,9 +164,10 @@ def main():
             errors.append(f"{session_id}: {e}")
 
     write_sessions_json(manifest)
+    wiki_linked = backfill_wiki_transcripts(manifest, WIKI_DIR)
     rebuild_transcripts_index(TRANSCRIPTS_DIR)
 
-    result = {"created": created, "updated": updated}
+    result = {"created": created, "updated": updated, "wiki_linked": wiki_linked}
     if errors:
         result["errors"] = errors
     print(json.dumps(result, ensure_ascii=False))

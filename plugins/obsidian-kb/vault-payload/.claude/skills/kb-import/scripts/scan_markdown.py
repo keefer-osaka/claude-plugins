@@ -39,7 +39,8 @@ _ZIP_AUTHOR_RE = re.compile(r'^chat-logs-([^-]+)-\d{8}.*\.zip$')
 
 
 def author_from_zip_name(zip_path: str) -> str:
-    m = _ZIP_AUTHOR_RE.match(os.path.basename(zip_path))
+    basename = re.sub(r'^[^\w]+', '', os.path.basename(zip_path))
+    m = _ZIP_AUTHOR_RE.match(basename)
     return m.group(1) if m else "unknown"
 
 
@@ -297,6 +298,14 @@ def scan_dir(scan_path: str, author: str) -> list:
                 messages = parsed["messages"]
             else:
                 manifest_entry = manifest.get(session_id, {})
+                existing_tp = manifest_entry.get("transcript_path", "")
+                if existing_tp and os.path.exists(os.path.join(VAULT_DIR, existing_tp)):
+                    existing_fname = os.path.basename(existing_tp)
+                    is_stub = existing_fname.startswith("0000-00-00-")
+                    if not is_stub:
+                        skipped.append({"path": md_path, "reason": "session_id already ingested"})
+                        continue
+                    # stub → fall through to allow re-import (upsert_transcripts will clean old file)
                 last_uuid = manifest_entry.get("last_processed_msg_uuid", "")
                 base_transcript = manifest_entry.get("transcript_path", "")
 

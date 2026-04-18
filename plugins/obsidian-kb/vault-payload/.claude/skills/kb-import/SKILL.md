@@ -22,16 +22,20 @@ kb-ingest 腳本：`__VAULT_DIR__/.claude/skills/kb-ingest/scripts`
 
 ## 步驟一：解析 Markdown zip
 
+根據 `$ARGUMENTS` 決定執行方式——**三選一，不要混用，不要自行 glob 或掃描額外 zip**：
+
 ```bash
-# 單一 zip
+# 情況 A：有具體檔名（例如 chat-logs-alice-20260417.zip）→ 只處理這一個，不掃描其他
 python3 __VAULT_DIR__/.claude/skills/kb-import/scripts/scan_markdown.py "$ARGUMENTS"
 
-# 指定目錄
+# 情況 B：有 --dir <path> → 只掃該目錄
 python3 __VAULT_DIR__/.claude/skills/kb-import/scripts/scan_markdown.py --dir <path>
 
-# 無參數（掃 inbox）
+# 情況 C：無參數 → 掃 inbox
 python3 __VAULT_DIR__/.claude/skills/kb-import/scripts/scan_markdown.py
 ```
+
+> ⚠️ 情況 A 時，即使工作目錄下有多個 zip，**也只處理使用者指定的那一個**，不要自行發現或追加其他 zip。
 
 輸出 JSON 結構與 `scan_sessions.py` 相容，每個 session 額外包含：
 - `author`：作者 slug（從 zip 檔名或 `<!-- git_user -->` 注釋抽取）

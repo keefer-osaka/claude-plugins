@@ -329,7 +329,7 @@ def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) 
 
         if top_match:
             # 替換既有區塊
-            new_fm_text = new_fm_text[:top_match.start()] + transcripts_block.rstrip('\n') + new_fm_text[top_match.end():]
+            new_fm_text = new_fm_text[:top_match.start()] + transcripts_block.rstrip('\n') + '\n' + new_fm_text[top_match.end():]
         else:
             # 插入到 created: 前，或追加到結尾
             created_m = re.search(r'^created:', new_fm_text, re.MULTILINE)
@@ -342,6 +342,25 @@ def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) 
     new_content = fm_open + new_fm_text + fm_close + body_rest
     Path(wiki_path).write_text(new_content, encoding="utf-8")
     return True
+
+
+def backfill_wiki_transcripts(manifest: dict, wiki_dir: str) -> int:
+    """
+    For every wiki page, fill in missing transcript: fields for sessions that
+    now have a transcript. Returns count of wiki files actually modified.
+    """
+    session_to_transcript = {
+        sid: entry["transcript_path"]
+        for sid, entry in manifest.items()
+        if entry.get("transcript_path")
+    }
+    updated = 0
+    for wiki_path in Path(wiki_dir).rglob("*.md"):
+        if wiki_path.name == "_index.md":
+            continue
+        if add_transcript_to_wiki_sources(str(wiki_path), session_to_transcript):
+            updated += 1
+    return updated
 
 
 # ── Transcript Append Delta ───────────────────────────────────────────────────
