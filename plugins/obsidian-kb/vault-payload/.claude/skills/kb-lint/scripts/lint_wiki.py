@@ -13,6 +13,7 @@ kb-lint: 知識庫健康檢查腳本
 8. cross_author_conflict   — 跨作者矛盾（contradicted 且多作者，或近 7 天多作者 draft）
 """
 
+import json
 import os
 import re
 import sys
@@ -21,11 +22,12 @@ from datetime import date, datetime
 
 # ── _lib 共用模組 ─────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "_lib")))
-from wiki_utils import resolve_vault_dir, parse_frontmatter, WIKILINK_RE, TW_TZ, TOP_LEVEL_SKIP, extract_fm_text, find_duplicate_top_level_keys  # noqa: E402
+from wiki_utils import resolve_vault_dir, parse_frontmatter, WIKILINK_RE, TW_TZ, TOP_LEVEL_SKIP, extract_fm_text, find_duplicate_top_level_keys, parse_source_blocks  # noqa: E402
 
 # ── 路徑設定 ──────────────────────────────────────────────────────────────────
 VAULT_DIR = Path(resolve_vault_dir(__file__))
 WIKI_DIR = VAULT_DIR / "wiki"
+SESSIONS_JSON_PATH = VAULT_DIR / "_schema" / "sessions.json"
 REPORT_PATH = WIKI_DIR / "meta" / "lint-report.md"
 
 TODAY = datetime.now(TW_TZ).date()
@@ -280,6 +282,50 @@ def check_duplicate_fm_keys(parsed_pages):
     return issues
 
 
+def load_sessions_manifest() -> dict:
+    """讀取 sessions.json；缺檔或解析失敗時回傳空 dict（lint 視為「無 manifest」）。"""
+    if not SESSIONS_JSON_PATH.exists():
+        return {}
+    try:
+        data = json.loads(SESSIONS_JSON_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[WARN] lint_wiki load sessions.json: {e}", file=sys.stderr)
+        return {}
+
+
+def check_broken_session_refs(parsed_pages, manifest):
+    """
+    第 10 節：sources 中 `- session: <sid>` 引用的 sid 不在 manifest 中。
+
+    對每個斷裂引用，嘗試以 prefix-24（前 24 字元，例如 `2026-04-23_18-21-17-554_`）
+    找近似匹配，若有則放在 detail 中作為「近似」提示。
+
+    回傳 list of (page, sid, near_sid_or_None)。
+    """
+    if not manifest:
+        return []
+    manifest_sids = set(manifest.keys())
+    prefix_index: dict[str, list[str]] = {}
+    for sid in manifest_sids:
+        key = sid[:24]
+        prefix_index.setdefault(key, []).append(sid)
+
+    issues = []
+    for page, text, _fm, _body in parsed_pages:
+        fm_text = extract_fm_text(text)
+        for sb in parse_source_blocks(fm_text):
+            sid = sb["session"]
+            if sid in manifest_sids:
+                continue
+            near = None
+            candidates = prefix_index.get(sid[:24], [])
+            if candidates:
+                near = candidates[0]
+            issues.append((page, sid, near))
+    return issues
+
+
 # ── 報告輸出 ──────────────────────────────────────────────────────────────────
 
 def rel(path):
@@ -316,6 +362,14 @@ def _fmt_duplicate_fm_keys(item):
     return f"- `{rel(page)}` — 重複 key: {', '.join(keys)}"
 
 
+def _fmt_broken_session_ref(item):
+    page, sid, near = item
+    base = f"- `{rel(page)}` — session `{sid}` 不在 sessions.json"
+    if near:
+        base += f"（近似：`{near}`）"
+    return base
+
+
 REPORT_SECTIONS = [
     ("canonical_drift",       "1. Canonical Drift",  _fmt_canonical_drift),
     ("broken_links",          "2. 斷裂連結",          _fmt_broken_link),
@@ -326,6 +380,7 @@ REPORT_SECTIONS = [
     ("stale_pages",           "7. 過時頁面",          _fmt_page),
     ("cross_author_conflict", "8. 跨作者矛盾",        _fmt_cross_author_conflict),
     ("duplicate_fm_keys",    "9. 重複 frontmatter key", _fmt_duplicate_fm_keys),
+    ("broken_session_refs",  "10. 斷裂 session 引用",  _fmt_broken_session_ref),
 ]
 
 
@@ -359,6 +414,8 @@ def main():
         fm, body = parse_frontmatter(text)
         parsed_pages.append((p, text, fm, body))
 
+    manifest = load_sessions_manifest()
+
     results = {
         "canonical_drift":       check_canonical_drift(parsed_pages),
         "broken_links":          check_broken_links(parsed_pages),
@@ -369,6 +426,7 @@ def main():
         "stale_pages":           check_stale(parsed_pages),
         "cross_author_conflict": check_cross_author_conflict(parsed_pages),
         "duplicate_fm_keys":     check_duplicate_fm_keys(parsed_pages),
+        "broken_session_refs":   check_broken_session_refs(parsed_pages, manifest),
     }
 
     report = generate_report(results)

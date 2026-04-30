@@ -44,17 +44,25 @@ class TestAuthorFromDir:
 # ── TestTsFromHeading ─────────────────────────────────────────────────────────
 
 class TestTsFromHeading:
+    # _ts_from_heading returns (iso_ts, tz_label) since v0.4.0
+
     def test_empty_string(self):
-        assert sm._ts_from_heading("") == ""
+        assert sm._ts_from_heading("") == ("", "")
 
     def test_iso_with_timezone_suffix(self):
-        assert sm._ts_from_heading("2026-04-17 12:34 UTC+8") == "2026-04-17 12:34"
+        ts, label = sm._ts_from_heading("2026-04-17 12:34 UTC+8")
+        assert ts == "2026-04-17T12:34+08:00"
+        assert label == "UTC+8"
 
     def test_exact_iso_no_suffix(self):
-        assert sm._ts_from_heading("2026-04-17 12:34") == "2026-04-17 12:34"
+        ts, label = sm._ts_from_heading("2026-04-17 12:34")
+        assert ts == "2026-04-17T12:34"
+        assert label == ""
 
     def test_non_date_string_returned_as_is(self):
-        assert sm._ts_from_heading("some-non-date-string") == "some-non-date-string"
+        ts, label = sm._ts_from_heading("some-non-date-string")
+        assert ts == "some-non-date-string"
+        assert label == ""
 
 
 # ── TestHtmlToMd ──────────────────────────────────────────────────────────────

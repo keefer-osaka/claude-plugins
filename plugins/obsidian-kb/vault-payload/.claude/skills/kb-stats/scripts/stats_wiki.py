@@ -50,7 +50,7 @@ def bar(n: int, total: int, width: int = 20) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def compute_stats(pages: list[dict]) -> dict:
+def compute_stats(pages: list[dict], manifest: dict | None = None) -> dict:
     total = len(pages)
 
     # 類型 / 狀態 / 信心度分佈
@@ -66,17 +66,32 @@ def compute_stats(pages: list[dict]) -> dict:
     total_source_refs = sum(p["source_count"] for p in pages)
     avg_sources = total_source_refs / total if total > 0 else 0
 
-    # Transcript 連結率
-    transcript_linked = sum(
-        sum(1 for sb in p["source_blocks"] if sb["has_transcript"])
-        for p in pages
-    )
-    unlinked_sources = [
-        (p["path"], sb["session"])
-        for p in pages
-        for sb in p["source_blocks"]
-        if not sb["has_transcript"]
-    ]
+    # Transcript 三分類：linked / backfillable / broken
+    # - linked: source 條目已含 transcript: 欄位
+    # - backfillable: 未含 transcript: 但 sid 在 manifest 中且該 manifest 條目有 transcript_path
+    # - broken: 未含 transcript: 且 sid 不在 manifest 中（或 manifest=None 全歸此類，保守 default）
+    sid_has_transcript: set[str] = set()
+    if manifest:
+        sid_has_transcript = {
+            sid for sid, e in manifest.items()
+            if isinstance(e, dict) and e.get("transcript_path")
+        }
+
+    linked: list[tuple[str, str]] = []
+    backfillable: list[tuple[str, str]] = []
+    broken: list[tuple[str, str]] = []
+    for p in pages:
+        for sb in p["source_blocks"]:
+            sid = sb["session"]
+            entry = (p["path"], sid)
+            if sb.get("has_transcript"):
+                linked.append(entry)
+            elif manifest is not None and sid in sid_has_transcript:
+                backfillable.append(entry)
+            else:
+                broken.append(entry)
+
+    transcript_linked = len(linked)
 
     # 新鮮度
     updated_pages = [p for p in pages if p["updated"]]
@@ -98,7 +113,8 @@ def compute_stats(pages: list[dict]) -> dict:
         "total_source_refs": total_source_refs,
         "avg_sources": avg_sources,
         "transcript_linked": transcript_linked,
-        "unlinked_sources": unlinked_sources,
+        "backfillable_sources": backfillable,
+        "broken_sources": broken,
         "fresh_30": fresh_30,
         "fresh_60": fresh_60,
         "fresh_90": fresh_90,
@@ -220,16 +236,40 @@ def render_report(stats: dict, ts_stats: dict) -> str:
 
     tl = stats["transcript_linked"]
     tb = stats["total_source_refs"]
+    backfillable = stats.get("backfillable_sources", [])
+    broken = stats.get("broken_sources", [])
     lines += [
         "",
         "## 6. Transcript 連結率",
         "",
         f"- Sources 條目有 transcript: 欄位：**{tl} / {tb}**（{pct(tl, tb)}）",
-        f"- 尚未連結：{tb - tl} 個",
+        f"- 可回填（manifest 有對應 transcript）：{len(backfillable)} 個",
+        f"- 斷裂引用（manifest 無對應）：{len(broken)} 個",
+        "",
+        f"### 6.1 可回填（{len(backfillable)} 個）",
+        "",
     ]
-    if tb - tl > 0:
-        for page_path, sid in stats.get("unlinked_sources", []):
-            lines.append(f"  - `{page_path}` ← session `{sid}`")
+    if backfillable:
+        lines.append("修復指令：`python3 .claude/skills/kb-ingest/scripts/backfill_wiki_links.py`")
+        lines.append("")
+        for page_path, sid in backfillable[:20]:
+            lines.append(f"- `{page_path}` ← session `{sid}`")
+        extra = len(backfillable) - 20
+        if extra > 0:
+            lines.append(f"- _+ {extra} more_")
+    else:
+        lines.append("_無_")
+
+    lines += [
+        "",
+        f"### 6.2 斷裂引用（{len(broken)} 個）",
+        "",
+    ]
+    if broken:
+        for page_path, sid in broken:
+            lines.append(f"- `{page_path}` ← session `{sid}`（manifest 無對應）")
+    else:
+        lines.append("_無_")
 
     lines += [
         "",
@@ -272,12 +312,24 @@ def render_report(stats: dict, ts_stats: dict) -> str:
 
 # ── 主程式 ────────────────────────────────────────────────────────────────────
 
+def load_manifest() -> dict | None:
+    """讀取 sessions.json 作為 transcript manifest。失敗回傳 None（保守 default）。"""
+    if not SESSIONS_JSON_PATH.exists():
+        return None
+    try:
+        return json.loads(SESSIONS_JSON_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] stats_wiki load manifest: {e}", file=sys.stderr)
+        return None
+
+
 def main():
     print("kb-stats 開始掃描...")
     pages = collect_content_pages(WIKI_DIR)
     print(f"  掃描到 {len(pages)} 個內容頁面")
 
-    stats = compute_stats(pages)
+    manifest = load_manifest()
+    stats = compute_stats(pages, manifest=manifest)
     ts_stats = load_transcripts_stats()
 
     report = render_report(stats, ts_stats)

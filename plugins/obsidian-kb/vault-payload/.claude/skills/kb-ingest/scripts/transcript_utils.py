@@ -21,7 +21,16 @@ from pathlib import Path
 
 _SKILLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, os.path.join(_SKILLS_DIR, "_lib"))
-from wiki_utils import resolve_vault_dir, TW_TZ, format_tw_date, find_duplicate_top_level_keys  # noqa: E402
+from wiki_utils import (  # noqa: E402
+    resolve_vault_dir,
+    TW_TZ,
+    VAULT_TZ,
+    VAULT_TZ_LABEL,
+    format_tw_date,
+    parse_ts_loose,
+    format_local_display,
+    find_duplicate_top_level_keys,
+)
 
 # ── 路徑常數 ─────────────────────────────────────────────────────────────────
 
@@ -62,11 +71,15 @@ def make_transcript_filename(first_ts: str, session_id: str, title: str) -> str:
 # ── Transcript Markdown 渲染 ──────────────────────────────────────────────────
 
 def format_message_header(role: str, ts: str) -> str:
-    """生成訊息標題行，例如 ## User (2026-04-11 14:32)"""
-    try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(TW_TZ)
-        ts_str = dt.strftime("%Y-%m-%d %H:%M")
-    except Exception:
+    """生成訊息標題行，例如 ## User (2026-04-11 14:32 UTC+8)。
+
+    一律 append VAULT_TZ_LABEL 以避免 TW（無 label）/ James（UTC+9）的不一致。
+    """
+    dt = parse_ts_loose(ts) if ts else None
+    if dt is not None:
+        local = dt.astimezone(VAULT_TZ)
+        ts_str = f"{local.strftime('%Y-%m-%d %H:%M')} {VAULT_TZ_LABEL}"
+    else:
         ts_str = ts or "?"
     label = "User" if role == "user" else "Assistant"
     return f"## {label} ({ts_str})"
@@ -88,8 +101,14 @@ def render_transcript_md(
     messages: list,  # [{role, text, timestamp, uuid}]
     author: str = "",
     source: str = "jsonl",
+    original_tz_label: str = "",
 ) -> str:
-    """渲染完整 transcript markdown（frontmatter + 對話內容）。"""
+    """渲染完整 transcript markdown（frontmatter + 對話內容）。
+
+    `first_ts` / `last_ts` 經 `format_local_display` 轉成 vault 時區 + label。
+    若 `original_tz_label` 非空且 ≠ VAULT_TZ_LABEL，frontmatter 會多寫一行
+    `original_tz: <label>`，方便溯源（例如外部來源是 UTC+9）。
+    """
 
     # YAML frontmatter
     models_str = json.dumps(models, ensure_ascii=False)
@@ -99,24 +118,31 @@ def render_transcript_md(
     else:
         derived_str = "\nderived_pages: []\n"
 
-    # 計算 first/last date display
+    # 計算 first/last date display（用於 H1 下方 session 摘要行）
     first_date = format_tw_date(first_ts) or date
     last_date = format_tw_date(last_ts) or date
 
+    # frontmatter 中的 first_ts / last_ts 改寫為本地時區顯示
+    first_ts_display = format_local_display(first_ts) if first_ts else ""
+    last_ts_display = format_local_display(last_ts) if last_ts else ""
+
     author_line = f"\nauthor: {author}" if author else ""
     source_line = f"\nsource: {source}"
+    original_tz_line = ""
+    if original_tz_label and original_tz_label != VAULT_TZ_LABEL:
+        original_tz_line = f"\noriginal_tz: {original_tz_label}"
 
     frontmatter = f"""---
 session_id: {session_id}
 title: {title}
 cwd: {cwd}
 date: {date}
-first_ts: {first_ts or ''}
-last_ts: {last_ts or ''}
+first_ts: {first_ts_display}
+last_ts: {last_ts_display}
 message_count: {message_count}
 last_processed_msg_uuid: {last_processed_msg_uuid or ''}
 last_processed_at: {last_processed_at}
-models: {models_str}{derived_str}status: {status}{author_line}{source_line}
+models: {models_str}{derived_str}status: {status}{author_line}{source_line}{original_tz_line}
 ---"""
 
     # 標題與 session 摘要行
@@ -212,14 +238,49 @@ def upsert_session_manifest(
 
 # ── Wiki Index ───────────────────────────────────────────────────────────────
 
-def read_wiki_index(vault_dir=None) -> dict | None:
-    """回傳 wiki_index dict 或 None（若不存在或損毀）。"""
-    path = os.path.join(vault_dir or VAULT_DIR, "_schema", "wiki_index.json")
+def _wiki_dir_newest_mtime(wiki_dir: str) -> float:
+    """Return the newest mtime among wiki/*.md files (0.0 if none)."""
+    newest = 0.0
+    if not os.path.isdir(wiki_dir):
+        return newest
+    for root, _dirs, files in os.walk(wiki_dir):
+        for fn in files:
+            if not fn.endswith(".md"):
+                continue
+            try:
+                m = os.path.getmtime(os.path.join(root, fn))
+            except OSError:
+                continue
+            if m > newest:
+                newest = m
+    return newest
+
+
+def read_wiki_index(vault_dir=None, wiki_dir=None) -> dict | None:
+    """回傳 wiki_index dict 或 None（若不存在或損毀）。
+
+    若 index 比任何 wiki/*.md 舊（mtime 比較），自動觸發 build_wiki_index_from_scan
+    重建並回傳新 index，避免 stale index 造成 backfill 漏更新。
+    """
+    vault_dir = vault_dir or VAULT_DIR
+    wiki_dir = wiki_dir or WIKI_DIR
+    path = os.path.join(vault_dir, "_schema", "wiki_index.json")
     try:
+        index_mtime = os.path.getmtime(path)
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
         return None
+
+    newest_wiki = _wiki_dir_newest_mtime(wiki_dir)
+    if newest_wiki > index_mtime:
+        print(
+            f"[kb-ingest] wiki_index stale (index={index_mtime:.0f} < wiki={newest_wiki:.0f}); "
+            "rebuilding from scan...",
+            file=sys.stderr,
+        )
+        return build_wiki_index_from_scan(wiki_dir=wiki_dir, vault_dir=vault_dir)
+    return data
 
 
 def write_wiki_index(data: dict, vault_dir=None) -> None:
@@ -282,7 +343,8 @@ def backfill_wiki_transcripts_incremental(
         if not os.path.exists(wiki_path):
             print(f"[WARN] wiki page not found: {wiki_path}", file=sys.stderr)
             continue
-        if add_transcript_to_wiki_sources(wiki_path, session_to_transcript):
+        result = add_transcript_to_wiki_sources(wiki_path, session_to_transcript)
+        if result["modified"]:
             updated += 1
     return updated
 
@@ -317,22 +379,33 @@ def _parse_frontmatter_sources(content: str) -> list:
     return [b["session"] for b in parse_source_blocks(extract_fm_text(content))]
 
 
-def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) -> bool:
+def add_transcript_to_wiki_sources(
+    wiki_path: str,
+    session_to_transcript: dict,
+    *,
+    dry_run: bool = False,
+) -> dict:
     """
     讀取 wiki 頁面，對 sources 中每個 session 補 transcript: 欄位（巢狀），
     並同步維護頂層 transcripts: list（供 Obsidian Properties 面板渲染可點擊連結）。
     只在該條目尚無 transcript: 時才補。
-    回傳 True 若有實際修改。
+
+    Returns:
+        {"modified": bool, "added": [(session_id, wikilink), ...]}
+        - modified=True 代表有實際寫檔（dry_run=True 時恆為 False）
+        - added 列出本次計畫補上的 (session_id, wikilink) pairs，便於上層彙報。
     """
+    empty_result = {"modified": False, "added": []}
+
     try:
         content = Path(wiki_path).read_text(encoding="utf-8")
     except Exception as e:
         print(f"[WARN] add_transcript_to_wiki_sources read {wiki_path}: {e}", file=sys.stderr)
-        return False
+        return empty_result
 
     fm_match = re.match(r'^(---\s*\n)(.*?)(\n---\s*\n)(.*)', content, re.DOTALL)
     if not fm_match:
-        return False
+        return empty_result
 
     fm_open, fm_body, fm_close, body_rest = fm_match.groups()
 
@@ -342,6 +415,7 @@ def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) 
     modified = False
     # 追蹤本次新增的 transcript wikilinks（供更新頂層 transcripts: list）
     new_transcripts = []
+    added_pairs: list = []  # [(session_id, wikilink), ...]
 
     while i < len(lines):
         line = lines[i]
@@ -375,13 +449,14 @@ def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) 
                 wikilink = f"[[{fname}]]"
                 new_fm_lines.append(f'{indent}  transcript: "{wikilink}"')
                 new_transcripts.append(wikilink)
+                added_pairs.append((session_id, wikilink))
                 modified = True
             continue
 
         i += 1
 
     if not modified:
-        return False
+        return empty_result
 
     new_fm_text = "\n".join(new_fm_lines)
 
@@ -425,10 +500,13 @@ def add_transcript_to_wiki_sources(wiki_path: str, session_to_transcript: dict) 
             f"duplicate top-level keys: {dupes}. Inspect the page manually.",
             file=sys.stderr,
         )
-        return False
+        return empty_result
+
+    if dry_run:
+        return {"modified": False, "added": added_pairs}
 
     Path(wiki_path).write_text(new_content, encoding="utf-8")
-    return True
+    return {"modified": True, "added": added_pairs}
 
 
 def backfill_wiki_transcripts(manifest: dict, wiki_dir: str) -> int:
@@ -445,7 +523,8 @@ def backfill_wiki_transcripts(manifest: dict, wiki_dir: str) -> int:
     for wiki_path in Path(wiki_dir).rglob("*.md"):
         if wiki_path.name == "_index.md":
             continue
-        if add_transcript_to_wiki_sources(str(wiki_path), session_to_transcript):
+        result = add_transcript_to_wiki_sources(str(wiki_path), session_to_transcript)
+        if result["modified"]:
             updated += 1
     return updated
 

@@ -8,6 +8,8 @@ from wiki_utils import (
     parse_frontmatter,
     WIKILINK_RE,
     TW_TZ,
+    VAULT_TZ,
+    VAULT_TZ_OFFSET,
     format_tw_date,
     extract_fm_text,
     find_duplicate_top_level_keys,
@@ -20,7 +22,9 @@ from wiki_utils import (
 # ── TW_TZ ────────────────────────────────────────────────────────────────────
 
 def test_tw_tz_is_utc8():
-    assert TW_TZ == timezone(timedelta(hours=8))
+    # TW_TZ is a backward-compat alias for VAULT_TZ; offset comes from env/config
+    assert TW_TZ == timezone(timedelta(hours=VAULT_TZ_OFFSET))
+    assert TW_TZ is VAULT_TZ
 
 
 # ── WIKILINK_RE ───────────────────────────────────────────────────────────────

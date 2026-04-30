@@ -91,8 +91,9 @@ class TestComputeStats:
         ]
         d = sw.compute_stats(pages)
         assert d["transcript_linked"] == 1
-        assert len(d["unlinked_sources"]) == 1
-        assert d["unlinked_sources"][0] == ("a.md", "s2")
+        # no manifest → unlinked sources all classified as broken_sources
+        assert len(d["broken_sources"]) == 1
+        assert d["broken_sources"][0] == ("a.md", "s2")
 
     def test_freshness_buckets(self, monkeypatch):
         monkeypatch.setattr(sw, "TODAY", date(2026, 4, 1))

@@ -44,6 +44,43 @@ def author_from_zip_name(zip_path: str) -> str:
     return m.group(1) if m else "unknown"
 
 
+def _decode_zip_name(info: zipfile.ZipInfo) -> str:
+    """Recover zip member filename when General Purpose Bit 11 (UTF-8) is unset.
+
+    zipfile decodes such names as cp437; try common CJK codecs to recover the
+    intended filename. Falls back to the cp437 decoding on total failure.
+    """
+    if info.flag_bits & 0x800:
+        return info.filename
+    try:
+        raw = info.filename.encode('cp437')
+    except UnicodeEncodeError:
+        return info.filename
+    for codec in ('utf-8', 'cp932', 'shift_jis', 'cp936', 'euc-kr'):
+        try:
+            return raw.decode(codec)
+        except UnicodeDecodeError:
+            continue
+    return info.filename
+
+
+def _safe_extract_zip(zip_path: str, tmpdir: str) -> None:
+    """Extract zip with per-member filename re-decoding and path traversal guard."""
+    tmp_real = os.path.realpath(tmpdir)
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            decoded = _decode_zip_name(info)
+            target = os.path.join(tmpdir, decoded)
+            target_real = os.path.realpath(target)
+            if not (target_real == tmp_real or target_real.startswith(tmp_real + os.sep)):
+                continue
+            os.makedirs(os.path.dirname(target_real), exist_ok=True)
+            with zf.open(info) as src, open(target_real, 'wb') as dst:
+                shutil.copyfileobj(src, dst)
+
+
 def author_from_dir(dir_path: str) -> str:
     author_file = os.path.join(dir_path, "author.txt")
     if os.path.exists(author_file):
@@ -83,16 +120,61 @@ _ROLE_MAP = {
 }
 
 
-def _ts_from_heading(ts_str: str) -> str:
-    """Try to parse a timestamp string from the heading suffix. Return ISO or empty."""
+_HEADING_TS_RE = re.compile(
+    r'(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)'
+    r'(?:\s*(UTC([+-])(\d{1,2})(?::?(\d{2}))?|Z))?'
+)
+
+
+def _ts_from_heading(ts_str: str) -> tuple[str, str]:
+    """Parse a timestamp string from a heading suffix.
+
+    Returns (iso_ts, tz_label). The ISO timestamp preserves timezone offset
+    when present (e.g. '2026-04-17T12:34+08:00'), so it round-trips through
+    datetime.fromisoformat. tz_label is a normalized human label such as
+    'UTC+8', 'UTC-5', 'UTC+0', or '' when no offset was supplied.
+    """
     if not ts_str:
-        return ""
+        return "", ""
     ts_str = ts_str.strip()
-    # Try ISO-like patterns: 2026-04-17 12:34 UTC+8
-    m = re.match(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2})', ts_str)
-    if m:
-        return m.group(1)
-    return ts_str
+    m = _HEADING_TS_RE.match(ts_str)
+    if not m:
+        return ts_str, ""
+
+    date_part, time_part, tz_full, sign, hh, mm = (
+        m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
+    )
+
+    if not tz_full:
+        return f"{date_part}T{time_part}", ""
+
+    if tz_full == "Z":
+        return f"{date_part}T{time_part}+00:00", "UTC+0"
+
+    hh_i = int(hh)
+    mm_i = int(mm) if mm else 0
+    offset_iso = f"{sign}{hh_i:02d}:{mm_i:02d}"
+    if mm_i:
+        label = f"UTC{sign}{hh_i}:{mm_i:02d}"
+    else:
+        label = f"UTC{sign}{hh_i}"
+    return f"{date_part}T{time_part}{offset_iso}", label
+
+
+def _pick_tz_label(messages: list) -> str:
+    """Pick the dominant tz_label across messages (first non-empty wins on tie)."""
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for msg in messages:
+        label = msg.get("tz_label") or ""
+        if not label:
+            continue
+        if label not in counts:
+            order.append(label)
+        counts[label] = counts.get(label, 0) + 1
+    if not counts:
+        return ""
+    return max(order, key=lambda lbl: counts[lbl])
 
 
 def _html_to_md(html_str: str) -> str:
@@ -168,15 +250,17 @@ def parse_html_file(html_path: str) -> dict | None:
     for m in _HTML_MSG_RE.finditer(content):
         uuid_val = m.group(1)
         role     = m.group(2)           # "user" or "assistant"
-        ts_str   = (m.group(3) or "").strip()
+        ts_raw   = (m.group(3) or "").strip()
         body_html = m.group(4)
         text = _html_to_md(body_html)
         if text:
+            ts_iso, tz_label = _ts_from_heading(ts_raw)
             messages.append({
                 "uuid": uuid_val,
                 "role": role,
                 "text": text,
-                "timestamp": ts_str,
+                "timestamp": ts_iso,
+                "tz_label": tz_label,
             })
 
     return {
@@ -184,6 +268,7 @@ def parse_html_file(html_path: str) -> dict | None:
         "git_user": git_user,
         "messages": messages,
         "md_path": html_path,
+        "original_tz_label": _pick_tz_label(messages),
     }
 
 
@@ -216,6 +301,7 @@ def parse_md_file(md_path: str) -> dict | None:
     pending_uuid = ""
     current_role = None
     current_ts = ""
+    current_tz_label = ""
     current_lines = []
 
     def _flush():
@@ -228,6 +314,7 @@ def parse_md_file(md_path: str) -> dict | None:
                 "role": current_role,
                 "text": text,
                 "timestamp": current_ts,
+                "tz_label": current_tz_label,
             })
 
     for line in lines:
@@ -242,7 +329,7 @@ def parse_md_file(md_path: str) -> dict | None:
             current_lines = []
             role_raw = hdg_m.group(1)
             current_role = _ROLE_MAP.get(role_raw, "user")
-            current_ts = _ts_from_heading(hdg_m.group(2) or "")
+            current_ts, current_tz_label = _ts_from_heading(hdg_m.group(2) or "")
             continue
 
         if current_role is not None:
@@ -258,6 +345,7 @@ def parse_md_file(md_path: str) -> dict | None:
         "git_user": git_user,
         "messages": messages,
         "md_path": md_path,
+        "original_tz_label": _pick_tz_label(messages),
     }
 
 
@@ -369,6 +457,7 @@ def scan_dir(scan_path: str, author: str) -> list:
                 ),
                 "author": effective_author,
                 "source": "md-import",
+                "original_tz_label": parsed.get("original_tz_label", "") or _pick_tz_label(messages),
             }
             results.append(entry)
 
@@ -397,8 +486,7 @@ def main():
         if zip_path:
             author = author_from_zip_name(zip_path)
             tmpdir = tempfile.mkdtemp(prefix="kb-import-")
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(tmpdir)
+            _safe_extract_zip(zip_path, tmpdir)
             scan_dir_path = tmpdir
 
         elif scan_dir_path:

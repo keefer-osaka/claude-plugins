@@ -100,6 +100,8 @@ echo '<sessions_json>' | python3 __VAULT_DIR__/.claude/skills/kb-ingest/scripts/
 - `author`（作者 slug，例如 `keefer`；scan_sessions.py 自動填入）
 - `source`（來源類型：`"jsonl"` 或 `"md-import"`）
 
+> **md-import 兼容性**：當 `source: "md-import"` 且 `jsonl_path: ""` 時，upsert 仍正常建立 transcript 並回填 wiki source。本地 JSONL 不存在不影響任何功能。
+
 腳本自動處理：建立/更新 transcript、更新 sessions manifest、重建 transcripts 索引。
 詳細欄位說明：`python3 .../upsert_transcripts.py --help`
 

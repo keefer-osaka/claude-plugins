@@ -14,6 +14,22 @@ Wiki 目錄：`__VAULT_DIR__/wiki`
 Skill 腳本：`__VAULT_DIR__/.claude/skills/kb-import/scripts`
 kb-ingest 腳本：`__VAULT_DIR__/.claude/skills/kb-ingest/scripts`
 
+## 術語
+
+**md-import session**：透過 `/kb-import` 從其他 contributor zip 匯入的 session。
+- `sessions.json` 條目的 `source: "md-import"`、`jsonl_path: ""`
+- **`jsonl_path` 為空是設計如此** — 本地不需 JSONL 也能正常運作
+- Wiki 連結建立**只**需 `transcript_path`，不需 `jsonl_path`
+
+**未連結（可回填）**：source 條目缺 `transcript:` 但 sessions.json 有對應 transcript_path
+→ 跑 `backfill_wiki_links.py` 即可
+
+**斷裂引用**：source 條目的 `session:` 不在 sessions.json
+→ 通常因人工縮寫了 sid（漏 CJK 段）→ 用 `kb-lint` §10 找出並手動修
+
+**❌ 不要把連結缺失歸因於「外部 sessions / 本地無 JSONL」** — 這個解釋是錯的。
+本地是否有 JSONL 與 wiki 連結建立完全無關。
+
 ## 用法
 
 - `/kb-import <zip>` — 匯入單一 zip（例如 `chat-logs-alice-20260417.zip`）
@@ -108,3 +124,4 @@ qmd update --collection obsidian-wiki
 - **繁體中文**：所有 wiki 頁面使用繁體中文（台灣）
 - **舊版 zip 相容**：無 `<!-- sid -->` 注釋時，session_id 從檔名推導，全量匯入
 - **zip 分片**：不支援分片 zip（`split -b 45m` 產生的分片），請 contributor 本機先重組再傳
+- **連結率低於預期** → `python3 __VAULT_DIR__/.claude/skills/kb-lint/scripts/fsck.py --fix` 並重跑 `python3 __VAULT_DIR__/.claude/skills/kb-ingest/scripts/backfill_wiki_links.py`

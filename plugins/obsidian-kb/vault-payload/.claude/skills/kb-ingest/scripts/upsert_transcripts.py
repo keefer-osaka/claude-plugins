@@ -161,6 +161,7 @@ def main():
                     messages=messages,
                     author=session.get("author", ""),
                     source=session.get("source", "jsonl"),
+                    original_tz_label=session.get("original_tz_label", ""),
                 )
                 Path(transcript_abs).write_text(md, encoding="utf-8")
                 upsert_session_manifest(
@@ -181,6 +182,9 @@ def main():
 
     write_sessions_json(manifest)
     touched_ids = [s["session_id"] for s in sessions if s.get("session_id")]
+    if not force_full_scan and (created > 0 or updated > 0):
+        print("[kb-ingest] Refreshing wiki_index after transcript creation...", file=sys.stderr)
+        wiki_index = build_wiki_index_from_scan()
     if force_full_scan:
         wiki_linked = backfill_wiki_transcripts(manifest, WIKI_DIR)
         wiki_index = build_wiki_index_from_scan()

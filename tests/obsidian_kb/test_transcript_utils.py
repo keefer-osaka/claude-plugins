@@ -472,7 +472,8 @@ def test_add_transcript_adds_field(tmp_path):
     result = tu.add_transcript_to_wiki_sources(
         wiki_path, {"sid-001": "transcripts/2026-04-10-sid-001-chat.md"}
     )
-    assert result is True
+    # v0.4.0: returns {"modified": bool, "added": [...]}
+    assert result["modified"] is True
     content = open(wiki_path, encoding="utf-8").read()
     assert 'transcript:' in content
     assert "2026-04-10-sid-001-chat" in content
@@ -486,7 +487,7 @@ def test_add_transcript_no_change_if_already_present(tmp_path):
     result = tu.add_transcript_to_wiki_sources(
         wiki_path, {"sid-001": "transcripts/2026-04-10-sid-001-chat.md"}
     )
-    assert result is False
+    assert result["modified"] is False
 
 
 def test_add_transcript_no_match_returns_false(tmp_path):
@@ -495,7 +496,7 @@ def test_add_transcript_no_match_returns_false(tmp_path):
         f.write(_make_wiki_page("sid-001"))
 
     result = tu.add_transcript_to_wiki_sources(wiki_path, {"other-sid": "transcripts/foo.md"})
-    assert result is False
+    assert result["modified"] is False
 
 
 def test_add_transcript_no_frontmatter_returns_false(tmp_path):
@@ -504,7 +505,7 @@ def test_add_transcript_no_frontmatter_returns_false(tmp_path):
         f.write("# No frontmatter\n\nJust body.\n")
 
     result = tu.add_transcript_to_wiki_sources(wiki_path, {"sid-001": "foo.md"})
-    assert result is False
+    assert result["modified"] is False
 
 
 # ── P2: wiki_index read/write/build/incremental ───────────────────────────────
