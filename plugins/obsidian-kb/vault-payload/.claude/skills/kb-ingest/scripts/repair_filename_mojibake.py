@@ -618,6 +618,23 @@ def _run(args) -> int:
             print("Run normalize_transcripts_tz.py --apply first.", file=sys.stderr)
             return 3
 
+    # --skip-if-clean: detect mojibake before touching the manifest.
+    # NOTE: `sessions` is loaded after _ensure_manifest below, so we must
+    # inline-load here to avoid NameError.
+    if getattr(args, "skip_if_clean", False):
+        _sessions_tmp = (
+            json.loads(SESSIONS_JSON.read_text(encoding="utf-8"))
+            if SESSIONS_JSON.is_file() else {}
+        )
+        _sid_map_tmp, _ = _build_mojibake_map(_sessions_tmp)
+        if not _sid_map_tmp:
+            print(json.dumps(
+                {"mode": "skip-clean", "phase1_sid_renames": 0},
+                ensure_ascii=False,
+            ))
+            return 2  # nothing-to-do; do NOT touch manifest
+        # Has mojibake — fall through to normal flow
+
     manifest_exists = MANIFEST_PATH.is_file()
     manifest = _ensure_manifest(args, manifest_exists)
     apply = bool(args.apply)
@@ -822,6 +839,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="rebuild filename from frontmatter first_ts")
     p.add_argument("--resume", action="store_true",
                    help="continue from an existing repair_manifest.json")
+    p.add_argument(
+        "--skip-if-clean",
+        dest="skip_if_clean",
+        action="store_true",
+        help="若 sessions.json 中無 mojibake key，直接 exit 2 不觸碰 manifest。",
+    )
     return p.parse_args(argv)
 
 

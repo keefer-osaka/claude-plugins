@@ -282,3 +282,35 @@ class TestFusedParseJsonl:
         assert err_f is None and err_p is None
         for key in ("title", "cwd", "first_ts", "last_ts", "input_tokens", "output_tokens"):
             assert fused[key] == parsed[key], f"mismatch on {key}"
+
+    def test_scan_sessions_skips_compact_summary(self):
+        import json, tempfile, os
+        lines = [
+            {"message": {"role": "user", "content": "q"},
+             "timestamp": "2025-01-01T00:00:00Z", "uuid": "u1"},
+            {"isCompactSummary": True,
+             "message": {"role": "assistant", "content": "summary",
+                         "usage": {"input_tokens": 999, "output_tokens": 999}},
+             "timestamp": "2025-01-01T00:00:01Z", "uuid": "compact-uuid"},
+            {"message": {"role": "assistant", "content": "a",
+                         "usage": {"input_tokens": 0, "output_tokens": 3}},
+             "timestamp": "2025-01-01T00:00:02Z", "uuid": "u2"},
+        ]
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False)
+        for l in lines:
+            tmp.write(json.dumps(l) + "\n")
+        tmp.close()
+        data, err = ss._fused_parse_jsonl(tmp.name)
+        texts = [m["text"] if isinstance(m, dict) else m[1] for m in data["messages"]]
+        assert "summary" not in texts
+        assert data.get("last_msg_uuid") == "u2"
+        os.unlink(tmp.name)
+
+    def test_scan_sessions_command_args_fence(self):
+        text = (
+            "<command-name>cmd</command-name>"
+            "<command-message>cmd</command-message>"
+            "<command-args>```\nfoo\n```</command-args>"
+        )
+        out = ss.clean_string_content(text)
+        assert out == "/cmd\n\n````\n```\nfoo\n```\n````"

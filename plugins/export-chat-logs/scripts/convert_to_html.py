@@ -129,13 +129,14 @@ def _md_to_html(text):
     code_blocks = []
 
     def _extract_fence(m):
-        lang = (m.group(1) or "").strip()
-        code_content = _html.escape(m.group(2))
+        lang = (m.group(2) or "").strip()
+        code_content = _html.escape(m.group(3))
         lang_attr = f' class="language-{lang}"' if lang else ""
         code_blocks.append(f"<pre><code{lang_attr}>{code_content}</code></pre>")
         return f"\x00CB{len(code_blocks)-1}\x00"
 
-    text = re.sub(r"```(\w*)\n(.*?)```", _extract_fence, text, flags=re.DOTALL)
+    # Pairs with common.py:clean_string_content — accepts any N-tick fence emitted there (N >= 3).
+    text = re.sub(r"(`{3,})(\w*)\n(.*?)\1", _extract_fence, text, flags=re.DOTALL)
 
     # Step 2: HTML-escape non-placeholder parts
     parts = re.split(r"(\x00CB\d+\x00)", text)

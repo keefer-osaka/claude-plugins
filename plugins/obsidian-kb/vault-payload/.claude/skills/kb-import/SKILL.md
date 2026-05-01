@@ -110,6 +110,29 @@ qmd update --collection obsidian-wiki
 
 若命令失敗，略過，不影響匯入結果。
 
+## 修復跨平台 mojibake（保險絲）
+
+某些 contributor zip 可能在 Windows 用 cp437 解壓導致 session_id mojibake；
+以下後處理為 idempotent 保險絲：無 mojibake 時 wrapper 內部會 skip-clean，
+不留 manifest、不留 `.done.<ts>` 噪音；任一步失敗 wrapper 仍 exit 0，
+import 流程不中斷。
+
+**單一命令，禁止拆解或省略**：
+
+```bash
+python3 __VAULT_DIR__/.claude/skills/kb-ingest/scripts/post_import_repair.py __VAULT_DIR__
+```
+
+**輸出採集**：wrapper 在 stdout 末行印一行 JSON：
+
+```json
+{"post_import_repair": {"repair": "ok|skipped|warn:<reason>",
+                         "remap": "ok|warn:exit_N",
+                         "backfill": "ok|warn:exit_N"}}
+```
+
+把這三欄位原值帶入「完成回報」第 5 項。
+
 ## 完成回報
 
 最後輸出簡潔摘要：
@@ -117,6 +140,8 @@ qmd update --collection obsidian-wiki
 - 處理了多少 sessions（新建 / delta 更新）
 - 新增/更新了哪些 wiki 頁面
 - 有無 cross-author conflict（若有，列出 session_id 清單）
+- **mojibake 修復**：repair=<status> / remap=<status> / backfill=<status>
+  （`skipped` 表示無 mojibake；`ok` 表示有修復；`warn:...` 表示該步失敗但 import 已完成）
 
 ## 注意事項
 

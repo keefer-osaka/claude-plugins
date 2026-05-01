@@ -69,17 +69,29 @@ def truncate(text, max_len=MAX_MSG_LEN):
     return text[:max_len] + f"\n\n[截斷：省略 {len(text) - max_len} 字元]"
 
 
+# Keep in sync with plugins/export-chat-logs/scripts/common.py:clean_string_content
 def clean_string_content(text):
     text = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', text).strip()
     if re.match(r'<local-command-stdout>', text):
         return ''
     if re.match(r'<command-name>', text) or re.match(r'<command-message>', text):
         msg_m = re.search(r'<command-message>(.*?)</command-message>', text, re.DOTALL)
+        args_m = re.search(r'<command-args>(.*?)</command-args>', text, re.DOTALL)
+
+        head = ''
         if msg_m:
             msg = msg_m.group(1).strip()
             if msg:
-                return f"/{msg}"
-        return ''
+                head = f"/{msg}"
+
+        args = args_m.group(1).strip() if args_m else ''
+        if head and args:
+            runs = re.findall(r'`+', args)
+            max_run = max((len(r) for r in runs), default=0)
+            fence_len = max(3, max_run + 1)
+            fence = '`' * fence_len
+            return f"{head}\n\n{fence}\n{args}\n{fence}"
+        return head or ''
     return text
 
 
@@ -151,6 +163,9 @@ def _fused_parse_jsonl(filepath):
                 try:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+
+                if obj.get("isCompactSummary"):
                     continue
 
                 if obj.get("type") == "custom-title":

@@ -181,3 +181,22 @@ class TestMdToHtml:
     def test_blockquote(self):
         result = _md_to_html("> quoted text")
         assert "<blockquote>" in result
+
+
+class TestMdToHtmlFence:
+    def test_3tick_fence_with_lang(self):
+        out = _md_to_html("```python\nprint('x')\n```")
+        assert 'class="language-python"' in out
+        assert "print(" in out
+
+    def test_3tick_fence_no_lang(self):
+        out = _md_to_html("```\nplain code\n```")
+        assert "<pre><code>" in out
+        assert "plain code" in out
+        assert 'class=' not in out.split("<pre>")[1].split("</pre>")[0]
+
+    def test_4tick_fence_end_to_end(self):
+        md = "/cmd\n\n````\n```\nfoo\n```\n````"
+        out = _md_to_html(md)
+        assert "<pre><code>" in out
+        assert "foo" in out

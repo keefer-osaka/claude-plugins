@@ -113,16 +113,29 @@ def clean_string_content(text):
     if re.match(r'<local-command-stdout>', text):
         return ''
 
+    # Fence length must exceed max inner backtick run; see convert_to_html.py:_md_to_html
+    # for the matching regex (must accept any N-tick fence with N >= 3).
     if re.match(r'<command-name>', text) or re.match(r'<command-message>', text):
         msg_m = re.search(r'<command-message>(.*?)</command-message>', text, re.DOTALL)
         name_m = re.search(r'<command-name>(.*?)</command-name>', text, re.DOTALL)
+        args_m = re.search(r'<command-args>(.*?)</command-args>', text, re.DOTALL)
+
+        head = ''
         if msg_m:
             msg = msg_m.group(1).strip()
             if msg:
-                return f"/{msg}"
-        if name_m:
-            return name_m.group(1).strip()
-        return ''
+                head = f"/{msg}"
+        if not head and name_m:
+            head = name_m.group(1).strip()
+
+        args = args_m.group(1).strip() if args_m else ''
+        if head and args:
+            runs = re.findall(r'`+', args)
+            max_run = max((len(r) for r in runs), default=0)
+            fence_len = max(3, max_run + 1)
+            fence = '`' * fence_len
+            return f"{head}\n\n{fence}\n{args}\n{fence}"
+        return head or ''
 
     return text
 
@@ -170,6 +183,8 @@ def parse_session(filepath):
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError:
+                continue
+            if obj.get("isCompactSummary"):
                 continue
 
             if session_id is None:

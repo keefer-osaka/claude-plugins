@@ -85,6 +85,41 @@ class TestCleanStringContent:
     def test_empty_string(self):
         assert clean_string_content("") == ""
 
+    def test_command_with_backtick_in_args(self):
+        text = (
+            "<command-name>cmd</command-name>"
+            "<command-message>cmd</command-message>"
+            "<command-args>```\nfoo\n```</command-args>"
+        )
+        out = clean_string_content(text)
+        assert out == "/cmd\n\n````\n```\nfoo\n```\n````"
+
+    def test_command_with_4tick_in_args(self):
+        text = (
+            "<command-name>cmd</command-name>"
+            "<command-message>cmd</command-message>"
+            "<command-args>````\nfoo\n````</command-args>"
+        )
+        out = clean_string_content(text)
+        assert out == "/cmd\n\n`````\n````\nfoo\n````\n`````"
+
+    def test_command_with_plain_args(self):
+        text = (
+            "<command-name>debug</command-name>"
+            "<command-message>debug</command-message>"
+            "<command-args>some args here</command-args>"
+        )
+        out = clean_string_content(text)
+        assert out == "/debug\n\n```\nsome args here\n```"
+
+    def test_command_without_args_unchanged(self):
+        text = (
+            "<command-name>cmd</command-name>"
+            "<command-message>cmd</command-message>"
+        )
+        out = clean_string_content(text)
+        assert out == "/cmd"
+
 
 class TestExtractTextBlocks:
     def test_string_input(self):
@@ -263,4 +298,24 @@ class TestParseSession:
         result = parse_session(path)
         assert result["tool_counts"].get("Bash") == 2
         assert result["tool_counts"].get("Read") == 1
+        os.unlink(path)
+
+    def test_compact_summary_filtered(self):
+        lines = [
+            {"message": {"role": "user", "content": "real question"},
+             "timestamp": "2025-01-01T00:00:00Z", "uuid": "u1"},
+            {"isCompactSummary": True,
+             "message": {"role": "assistant", "content": "summary text",
+                         "usage": {"input_tokens": 999, "output_tokens": 999}},
+             "timestamp": "2025-01-01T00:00:01Z", "uuid": "compact"},
+            {"message": {"role": "assistant", "content": "real answer",
+                         "usage": {"input_tokens": 0, "output_tokens": 5}},
+             "timestamp": "2025-01-01T00:00:02Z", "uuid": "u2"},
+        ]
+        path = self._make_jsonl(lines)
+        result = parse_session(path)
+        texts = [t for _role, t, *_ in result["messages"]]
+        assert "summary text" not in texts
+        assert result["input_tokens"] == 0
+        assert result["output_tokens"] == 5
         os.unlink(path)
