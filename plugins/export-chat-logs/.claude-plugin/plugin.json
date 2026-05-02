@@ -1,7 +1,7 @@
 {
   "name": "export-chat-logs",
   "description": "Export Claude Code and Cowork chat logs as HTML or Markdown, zip them, and send via Telegram.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": {
     "name": "keefer-osaka",
     "url": "https://github.com/keefer-osaka"

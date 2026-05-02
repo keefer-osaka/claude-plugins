@@ -123,6 +123,110 @@ header h1 {
 
 # ── Markdown → HTML conversion ─────────────────────────────────────────────────
 
+def _extract_tables(text):
+    """Extract GFM tables from text, replacing with \x00TB{n}\x00 placeholders.
+    Returns (new_text, tables) where tables is a list of rendered <table> HTML strings.
+    Falls back silently to (text, []) on any error.
+    """
+    try:
+        import html
+
+        def _render_cell_inline(s):
+            s = html.escape(s)
+            s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
+            s = re.sub(r'\*\*\*(.+?)\*\*\*', r'<strong><em>\1</em></strong>', s)
+            s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+            s = re.sub(r'\*(.+?)\*', r'<em>\1</em>', s)
+            s = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', s)
+            s = s.replace('\x00PIPE\x00', '&#124;')
+            return s
+
+        def _split_cells(line):
+            line = line.replace(r'\|', '\x00PIPE\x00')
+            cells = line.split('|')
+            # Strip whitespace and filter leading/trailing empty strings from | a | b | format
+            cells = [c.strip() for c in cells]
+            if cells and cells[0] == '':
+                cells = cells[1:]
+            if cells and cells[-1] == '':
+                cells = cells[:-1]
+            return cells
+
+        def _is_separator_cell(cell):
+            return bool(re.match(r'^:?-{3,}:?$', cell))
+
+        def _col_align(cell):
+            if re.match(r'^:-{3,}:$', cell):
+                return 'text-align:center'
+            elif re.match(r'^:-{3,}$', cell):
+                return 'text-align:left'
+            elif re.match(r'^-{3,}:$', cell):
+                return 'text-align:right'
+            else:
+                return 'text-align:left'
+
+        lines = text.split('\n')
+        tables = []
+        result_lines = []
+        i = 0
+        while i < len(lines):
+            # Check for table: current line is header, next line is separator
+            if i + 1 < len(lines):
+                header_cells = _split_cells(lines[i])
+                sep_cells = _split_cells(lines[i + 1])
+                if (header_cells and sep_cells
+                        and len(sep_cells) == len(header_cells)
+                        and all(_is_separator_cell(c) for c in sep_cells)):
+                    # Valid table found
+                    aligns = [_col_align(c) for c in sep_cells]
+                    col_count = len(header_cells)
+
+                    # Collect body rows
+                    body_rows = []
+                    j = i + 2
+                    while j < len(lines):
+                        row_cells = _split_cells(lines[j])
+                        # A row must have at least one pipe or be non-empty; stop on blank line
+                        if not lines[j].strip() or '|' not in lines[j] and len(row_cells) < 2:
+                            break
+                        body_rows.append(row_cells)
+                        j += 1
+
+                    # Build HTML
+                    thead_cells = ''.join(
+                        f'<th style="{aligns[ci]}">{_render_cell_inline(header_cells[ci])}</th>'
+                        for ci in range(col_count)
+                    )
+                    tbody_rows_html = []
+                    for row in body_rows:
+                        # Pad or truncate
+                        padded = row[:col_count] + [''] * max(0, col_count - len(row))
+                        tbody_rows_html.append(
+                            '<tr>' + ''.join(
+                                f'<td style="{aligns[ci]}">{_render_cell_inline(padded[ci])}</td>'
+                                for ci in range(col_count)
+                            ) + '</tr>'
+                        )
+                    tbody_html = '\n'.join(tbody_rows_html)
+                    table_html = (
+                        f'<table>\n'
+                        f'<thead><tr>{thead_cells}</tr></thead>\n'
+                        f'<tbody>\n{tbody_html}\n</tbody>\n'
+                        f'</table>'
+                    )
+                    placeholder = f'\x00TB{len(tables)}\x00'
+                    tables.append(table_html)
+                    result_lines.append(placeholder)
+                    i = j
+                    continue
+            result_lines.append(lines[i])
+            i += 1
+
+        return '\n'.join(result_lines), tables
+    except Exception:
+        return text, []
+
+
 def _md_to_html(text):
     """Convert a Markdown subset to HTML. Input is raw (not yet escaped)."""
     # Step 1: Extract triple-backtick code fences before escaping
@@ -138,11 +242,14 @@ def _md_to_html(text):
     # Pairs with common.py:clean_string_content — accepts any N-tick fence emitted there (N >= 3).
     text = re.sub(r"(`{3,})(\w*)\n(.*?)\1", _extract_fence, text, flags=re.DOTALL)
 
+    # Step 1.5: Extract GFM tables (after code fence extraction to prevent parsing tables inside code blocks)
+    text, tables = _extract_tables(text)
+
     # Step 2: HTML-escape non-placeholder parts
-    parts = re.split(r"(\x00CB\d+\x00)", text)
+    parts = re.split(r"(\x00(?:CB|TB)\d+\x00)", text)
     escaped = []
     for p in parts:
-        if re.match(r"\x00CB\d+\x00", p):
+        if re.match(r"\x00(?:CB|TB)\d+\x00", p):
             escaped.append(p)
         else:
             escaped.append(_html.escape(p))
@@ -224,7 +331,7 @@ def _md_to_html(text):
         if not para:
             continue
         lines_in = para.split("\n")
-        if any(_BLOCK.match(l) or l.startswith("\x00CB") for l in lines_in):
+        if any(_BLOCK.match(l) or l.startswith(("\x00CB", "\x00TB")) for l in lines_in):
             result.append(para)
         else:
             inner = "<br>\n".join(l for l in lines_in)
@@ -232,8 +339,11 @@ def _md_to_html(text):
                 result.append(f"<p>{inner}</p>")
     text = "\n".join(result)
 
-    # Step 11: Restore code blocks
-    text = re.sub(r"\x00CB(\d+)\x00", lambda m: code_blocks[int(m.group(1))], text)
+    # Step 11: Restore code blocks and tables
+    def _restore_placeholder(m):
+        kind, idx = m.group(1), int(m.group(2))
+        return code_blocks[idx] if kind == "CB" else tables[idx]
+    text = re.sub(r"\x00(CB|TB)(\d+)\x00", _restore_placeholder, text)
     return text
 
 
