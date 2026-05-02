@@ -5,21 +5,21 @@
   },
   "metadata": {
     "description": "A collection of Claude Code plugins for developer workflows.",
-    "version": "0.4.0"
+    "version": "0.4.1"
   },
   "plugins": [
     {
       "name": "export-chat-logs",
       "source": "./plugins/export-chat-logs",
       "description": "Export Claude Code and Cowork chat logs as HTML or Markdown, zip them, and send via Telegram.",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "author": {
         "name": "keefer-osaka"
       },
       "homepage": "https://github.com/keefer-osaka/devtools-plugins",
       "repository": "https://github.com/keefer-osaka/devtools-plugins",
       "license": "MIT",
-      "keywords": ["chat-logs", "export", "telegram", "claude-code", "html", "markdown", "cowork"]
+      "keywords": ["chat-logs", "export", "telegram", "claude-code", "html", "markdown", "cowork", "auto", "cron"]
     },
     {
       "name": "protoc-java-gen",
@@ -45,7 +45,7 @@
       "homepage": "https://github.com/keefer-osaka/devtools-plugins",
       "repository": "https://github.com/keefer-osaka/devtools-plugins",
       "license": "MIT",
-      "keywords": ["obsidian", "knowledge-base", "wiki", "qmd", "claude-code", "memory", "ingest"]
+      "keywords": ["obsidian", "knowledge-base", "wiki", "qmd", "claude-code", "memory", "ingest", "import", "multi-contributor"]
     }
   ]
 }
